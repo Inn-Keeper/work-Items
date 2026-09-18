@@ -144,6 +144,9 @@ button.danger-solid { background: var(--danger); }
 button.danger-solid:hover { background: var(--danger); filter: brightness(1.1); }
 
 /* List panel */
+.search-row { display: flex; gap: 8px; }
+.search-row select { width: auto; }
+.load-more { align-self: center; margin-top: 10px; }
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .chip {
   padding: 5px 12px;

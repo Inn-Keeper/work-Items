@@ -16,15 +16,23 @@ internal sealed class WorkItemsClient : IDisposable
 
     internal WorkItemsClient(HttpClient http) => _http = http;
 
-    public async Task<List<WorkItem>> GetItemsAsync() =>
-        await _http.GetFromJsonAsync<List<WorkItem>>("workitems/", JsonOptions) ?? [];
+    public async Task<ItemPage> GetItemsAsync(ItemQuery? query = null)
+    {
+        query ??= new ItemQuery();
+        var url = $"workitems/?sort={query.Sort}&desc={query.Desc}&page={query.Page}&pageSize={query.PageSize}";
+        if (query.Status is { } status) url += $"&status={status}";
+        if (!string.IsNullOrWhiteSpace(query.Search)) url += $"&search={Uri.EscapeDataString(query.Search.Trim())}";
+        return await _http.GetFromJsonAsync<ItemPage>(url, JsonOptions)
+            ?? throw new InvalidOperationException("API returned an empty response.");
+    }
 
-    public async Task SaveAsync(int? id, WorkItemInput input)
+    public async Task<WorkItem> SaveAsync(int? id, WorkItemInput input)
     {
         using var response = id is null
             ? await _http.PostAsJsonAsync("workitems/", input, JsonOptions)
             : await _http.PutAsJsonAsync($"workitems/{id}", input, JsonOptions);
         await CheckResponseAsync(response);
+        return (await response.Content.ReadFromJsonAsync<WorkItem>(JsonOptions))!;
     }
 
     public async Task DeleteAsync(int id)

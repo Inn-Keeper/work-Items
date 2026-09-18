@@ -15,8 +15,8 @@ public sealed class WorkItemsDbModelSnapshot : ModelSnapshot
             item.Property(value => value.Title).IsRequired().HasMaxLength(200).HasColumnType("TEXT");
             item.Property(value => value.Description).HasColumnType("TEXT");
             item.Property(value => value.Status).HasConversion<string>().HasColumnType("TEXT");
-            item.Property(value => value.DueDate).HasColumnType("TEXT");
-            item.Property(value => value.CreatedAt).HasColumnType("TEXT");
+            item.Property(value => value.DueDate).HasConversion<string>().HasColumnType("TEXT");
+            item.Property(value => value.CreatedAt).HasConversion<string>().HasColumnType("TEXT");
             item.HasKey(value => value.Id);
             item.ToTable("WorkItems");
         });

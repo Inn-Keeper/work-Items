@@ -64,11 +64,16 @@ internal sealed class MainWindow : Window
     };
 
     private static readonly string[] StatusLabels = ["Todo", "In progress", "Done"];
+    private static readonly (string Label, ItemSort Sort, bool Desc)[] SortOptions =
+        [("Due date", ItemSort.DueDate, false), ("Newest", ItemSort.CreatedAt, true), ("Title", ItemSort.Title, false), ("Status", ItemSort.Status, false)];
 
     private readonly WorkItemsClient _client = new();
     private readonly ListBox _items = new() { Background = Brushes.Transparent, ItemTemplate = new FuncDataTemplate<WorkItem>((item, _) => ItemCard(item)) };
     private readonly TextBox _search = new() { PlaceholderText = "Search items…  (⌘F)" };
     private readonly ToggleButton[] _filters = new[] { "All" }.Concat(StatusLabels).Select(label => new ToggleButton { Content = label }).ToArray();
+    private readonly ComboBox _sort = new() { ItemsSource = SortOptions.Select(option => option.Label).ToArray(), SelectedIndex = 0, MinWidth = 130 };
+    private readonly Button _loadMore = new() { Content = "Load more", HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0), IsVisible = false };
+    private readonly DispatcherTimer _searchDelay = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly StackPanel _empty = new() { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _emptyText = new() { HorizontalAlignment = HorizontalAlignment.Center };
     private readonly Button _emptyCreate = new() { Content = "Create your first item", HorizontalAlignment = HorizontalAlignment.Center };
@@ -97,7 +102,10 @@ internal sealed class MainWindow : Window
     private readonly TextBlock _toastText = new() { FontWeight = FontWeight.SemiBold };
     private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(2.2) };
 
-    private List<WorkItem> _all = [];
+    private readonly List<WorkItem> _loaded = [];
+    private int _total;
+    private int _page;
+    private int _requestId; // Ignore responses that arrive after a newer query was sent.
     private WorkItem? _selected;
     private int _filter = -1; // -1 = all, otherwise a WorkItemStatus
     private bool _syncingList;
@@ -140,11 +148,14 @@ internal sealed class MainWindow : Window
         {
             if (!_syncingList && _items.SelectedItem is WorkItem item) Edit(item);
         };
-        _search.TextChanged += (_, _) => ApplyFilter();
+        _search.TextChanged += (_, _) => { _searchDelay.Stop(); _searchDelay.Start(); };
+        _searchDelay.Tick += async (_, _) => { _searchDelay.Stop(); await RefreshAsync(); };
+        _sort.SelectionChanged += async (_, _) => await RefreshAsync();
+        _loadMore.Click += async (_, _) => await LoadPageAsync(_page + 1);
         for (var i = 0; i < _filters.Length; i++)
         {
             var status = i - 1;
-            _filters[i].Click += (_, _) => { _filter = status; ApplyFilter(); };
+            _filters[i].Click += async (_, _) => { _filter = status; await RefreshAsync(); };
         }
         _title.TextChanged += (_, _) => { if (!string.IsNullOrWhiteSpace(_title.Text)) _titleError.IsVisible = false; };
         _save.Click += async (_, _) => await SaveAsync();
@@ -275,15 +286,19 @@ internal sealed class MainWindow : Window
         Themed(_emptyText, TextBlock.ForegroundProperty, "Muted");
         _empty.Children.Add(_emptyText);
         _empty.Children.Add(_emptyCreate);
-        var list = new Panel { Children = { _items, _empty } };
+        var list = new Grid { RowDefinitions = new RowDefinitions("*,Auto"), Children = { _items, _empty, _loadMore } };
+        Grid.SetRowSpan(_empty, 2);
+        Grid.SetRow(_loadMore, 1);
+        var searchRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 8, Children = { _search, _sort } };
+        Grid.SetColumn(_sort, 1);
 
         var panel = new Grid
         {
             RowDefinitions = new RowDefinitions("Auto,Auto,Auto,*"),
             RowSpacing = 12,
-            Children = { heading, _search, filters, list }
+            Children = { heading, searchRow, filters, list }
         };
-        Grid.SetRow(_search, 1);
+        Grid.SetRow(searchRow, 1);
         Grid.SetRow(filters, 2);
         Grid.SetRow(list, 3);
         ApplyFilterChips();
@@ -426,25 +441,20 @@ internal sealed class MainWindow : Window
         for (var i = 0; i < _filters.Length; i++) _filters[i].IsChecked = i - 1 == _filter;
     }
 
-    private void ApplyFilter()
+    private void RenderList()
     {
         ApplyFilterChips();
-        var query = _search.Text?.Trim() ?? "";
-        var visible = _all.Where(item =>
-            (_filter < 0 || (int)item.Status == _filter) &&
-            (query.Length == 0 ||
-             item.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-             (item.Description?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false))).ToList();
-
         _syncingList = true;
-        _items.ItemsSource = visible;
-        _items.SelectedItem = visible.FirstOrDefault(item => item.Id == _selected?.Id);
+        _items.ItemsSource = _loaded.ToList();
+        _items.SelectedItem = _loaded.FirstOrDefault(item => item.Id == _selected?.Id);
         _syncingList = false;
 
-        _count.Text = _all.Count == 1 ? "1 item" : $"{_all.Count} items";
-        _empty.IsVisible = visible.Count == 0 && !_banner.IsVisible;
-        _emptyText.Text = _all.Count == 0 ? "No work items yet." : "No items match your filters.";
-        _emptyCreate.IsVisible = _all.Count == 0;
+        var filtered = _filter >= 0 || !string.IsNullOrWhiteSpace(_search.Text);
+        _count.Text = _total == 1 ? "1 item" : $"{_total} items";
+        _loadMore.IsVisible = _loaded.Count < _total;
+        _empty.IsVisible = _loaded.Count == 0 && !_banner.IsVisible;
+        _emptyText.Text = filtered ? "No items match your filters." : "No work items yet.";
+        _emptyCreate.IsVisible = !filtered;
     }
 
     private void Edit(WorkItem? item)
@@ -496,19 +506,26 @@ internal sealed class MainWindow : Window
         _toastTimer.Start();
     }
 
-    private async Task RefreshAsync()
+    private Task RefreshAsync() => LoadPageAsync(1);
+
+    private async Task LoadPageAsync(int page)
     {
+        var requestId = ++_requestId;
+        var (_, sort, desc) = SortOptions[Math.Max(_sort.SelectedIndex, 0)];
+        var query = new ItemQuery(_filter < 0 ? null : (WorkItemStatus)_filter, _search.Text, sort, desc, page);
         SetBusy(true);
         try
         {
-            _all = await _client.GetItemsAsync();
+            var result = await _client.GetItemsAsync(query);
+            if (requestId != _requestId) return;
+            if (page == 1) _loaded.Clear();
+            _loaded.AddRange(result.Items);
+            (_total, _page) = (result.Total, result.Page);
             _banner.IsVisible = false;
-            // Keep editing the same item if it still exists.
-            if (_selected is not null)
-                _selected = _all.FirstOrDefault(item => item.Id == _selected.Id);
         }
         catch (Exception error)
         {
+            if (requestId != _requestId) return;
             _bannerText.Text = error is HttpRequestException
                 ? "Cannot reach the Work Items API. Start WorkItems.Api and retry."
                 : error.Message;
@@ -516,7 +533,7 @@ internal sealed class MainWindow : Window
         }
         finally
         {
-            ApplyFilter();
+            if (requestId == _requestId) RenderList();
             SetBusy(false);
         }
     }
@@ -541,14 +558,9 @@ internal sealed class MainWindow : Window
         SetBusy(true);
         try
         {
-            await _client.SaveAsync(editing?.Id, input);
-            var before = _all.Select(item => item.Id).ToHashSet();
+            // Keep editing the saved item even if the current filter or page hides it.
+            Edit(await _client.SaveAsync(editing?.Id, input));
             await RefreshAsync();
-            // A new item has the one id we had not seen before.
-            Edit(editing is null
-                ? _all.FirstOrDefault(item => !before.Contains(item.Id))
-                : _all.FirstOrDefault(item => item.Id == editing.Id));
-            ApplyFilter();
             ShowToast(editing is null ? "Item added" : "Changes saved");
         }
         catch (Exception error) { _message.Text = error.Message; }
@@ -616,5 +628,6 @@ internal sealed class MainWindow : Window
         _new.IsEnabled = !busy;
         _delete.IsEnabled = !busy;
         _retry.IsEnabled = !busy;
+        _loadMore.IsEnabled = !busy;
     }
 }

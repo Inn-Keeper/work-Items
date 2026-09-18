@@ -6,6 +6,8 @@ const $ = (selector) => document.querySelector(selector);
 const form = $('#item-form');
 const list = $('#item-list');
 const search = $('#search');
+const sortField = $('#sort');
+const loadMoreButton = $('#load-more');
 const message = $('#message');
 const heading = $('#form-heading');
 const saveButton = $('#save-button');
@@ -20,10 +22,14 @@ const banner = $('#banner');
 const toast = $('#toast');
 const confirmDialog = $('#confirm-dialog');
 
-let items = [];
-let selected = null;
+let items = [];      // pages loaded so far
+let total = 0;
+let page = 1;
+let selected = null; // item in the editor; may be outside the loaded pages
 let filter = 'all';
+let requestId = 0;   // ignore responses that arrive after a newer query was sent
 let toastTimer;
+let searchTimer;
 
 function showToast(text) {
   toast.textContent = text;
@@ -38,13 +44,10 @@ function setTitleError(show) {
 }
 
 function render() {
-  const query = search.value.trim().toLowerCase();
-  const visible = items.filter((item) =>
-    (filter === 'all' || item.status === Number(filter)) &&
-    (!query || `${item.title} ${item.description ?? ''}`.toLowerCase().includes(query)));
-
-  $('#count').textContent = `${items.length} item${items.length === 1 ? '' : 's'}`;
-  renderItems(list, visible, { selectedId: selected?.id, hasAny: items.length > 0, onSelect: select, onNew: newItem });
+  $('#count').textContent = `${total} item${total === 1 ? '' : 's'}`;
+  loadMoreButton.hidden = items.length >= total;
+  const filtered = filter !== 'all' || search.value.trim() !== '';
+  renderItems(list, items, { selectedId: selected?.id, filtered, onSelect: select, onNew: newItem });
 }
 
 function fillForm(item) {
@@ -72,14 +75,24 @@ function newItem() {
   titleField.focus();
 }
 
-async function loadItems() {
+async function loadItems(pageToLoad = 1) {
+  const id = ++requestId;
+  const option = sortField.selectedOptions[0];
   try {
-    items = await getItems();
+    const result = await getItems({
+      status: filter === 'all' ? null : filter,
+      search: search.value.trim(),
+      sort: option.value,
+      desc: option.dataset.desc === 'true',
+      page: pageToLoad
+    });
+    if (id !== requestId) return;
+    items = pageToLoad === 1 ? result.items : [...items, ...result.items];
+    ({ total, page } = result);
     banner.hidden = true;
-    // Keep the editor on the same item if it still exists.
-    if (selected) selected = items.find((item) => item.id === selected.id) ?? null;
     render();
   } catch {
+    if (id !== requestId) return;
     $('#banner-text').textContent = 'Cannot reach the Work Items API.';
     banner.hidden = false;
   }
@@ -104,8 +117,9 @@ async function save() {
       dueDate: fromInputDate(dueDateField.value)
     });
     showToast(selected ? 'Changes saved' : 'Item added');
+    // Keep editing the saved item even if the current filter or page hides it.
+    fillForm(saved);
     await loadItems();
-    fillForm(items.find((item) => item.id === saved.id) ?? null);
   } catch (error) { message.textContent = error.message; }
   finally { saveButton.disabled = false; }
 }
@@ -131,15 +145,20 @@ titleField.addEventListener('input', () => { if (titleField.value.trim()) setTit
 cancelButton.addEventListener('click', () => fillForm(null));
 deleteButton.addEventListener('click', deleteSelected);
 $('#new-button').addEventListener('click', newItem);
-$('#retry-button').addEventListener('click', loadItems);
-search.addEventListener('input', render);
+$('#retry-button').addEventListener('click', () => loadItems());
+loadMoreButton.addEventListener('click', () => loadItems(page + 1));
+sortField.addEventListener('change', () => loadItems());
+search.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadItems(), 250);
+});
 
 for (const chip of document.querySelectorAll('.chip')) {
   chip.addEventListener('click', () => {
     filter = chip.dataset.filter;
     for (const other of document.querySelectorAll('.chip'))
       other.setAttribute('aria-pressed', String(other === chip));
-    render();
+    loadItems();
   });
 }
 

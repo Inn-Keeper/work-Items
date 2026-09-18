@@ -35,3 +35,11 @@ internal sealed record WorkItem(
 
 internal sealed record WorkItemInput(
     string Title, string? Description, WorkItemStatus Status, DateTimeOffset? DueDate);
+
+internal enum ItemSort { DueDate, CreatedAt, Title, Status }
+
+internal sealed record ItemQuery(
+    WorkItemStatus? Status = null, string? Search = null, ItemSort Sort = ItemSort.DueDate,
+    bool Desc = false, int Page = 1, int PageSize = 50);
+
+internal sealed record ItemPage(List<WorkItem> Items, int Total, int Page, int PageSize);

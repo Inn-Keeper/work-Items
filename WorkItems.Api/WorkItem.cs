@@ -29,3 +29,20 @@ public sealed record WorkItemResponse(
     public static WorkItemResponse From(WorkItem item) =>
         new(item.Id, item.Title, item.Description, item.Status, item.DueDate, item.CreatedAt);
 }
+
+public enum WorkItemSort { DueDate, CreatedAt, Title, Status }
+
+// Query string for GET /workitems; bound with [AsParameters]. Status and Sort are strings because
+// minimal APIs bind enums case-sensitively, and clients send camelCase ("dueDate").
+public sealed record WorkItemQuery(
+    string? Status = null,
+    string? Search = null,
+    string? Sort = null,
+    bool Desc = false,
+    int Page = 1,
+    int PageSize = 50)
+{
+    public const int MaxPageSize = 100;
+}
+
+public sealed record PagedResponse<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);

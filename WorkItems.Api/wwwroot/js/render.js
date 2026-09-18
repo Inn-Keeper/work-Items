@@ -9,13 +9,13 @@ function el(tag, className, text) {
   return node;
 }
 
-export function renderItems(list, items, { selectedId, hasAny, onSelect, onNew }) {
+export function renderItems(list, items, { selectedId, filtered, onSelect, onNew }) {
   list.replaceChildren();
 
   if (!items.length) {
     const empty = el('li', 'empty');
-    empty.append(el('p', '', hasAny ? 'No items match your filters.' : 'No work items yet.'));
-    if (!hasAny) {
+    empty.append(el('p', '', filtered ? 'No items match your filters.' : 'No work items yet.'));
+    if (!filtered) {
       const create = el('button', 'secondary small', 'Create your first item');
       create.type = 'button';
       create.addEventListener('click', onNew);

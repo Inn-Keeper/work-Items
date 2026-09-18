@@ -42,9 +42,12 @@ For an Apple Silicon macOS executable, run `dotnet publish WorkItems.Desktop -r 
 ```sh
 curl -X POST http://localhost:5000/workitems/ -H 'Content-Type: application/json' \
   -d '{"title":"Practice async/await","status":0}'
-curl http://localhost:5000/workitems/
+curl 'http://localhost:5000/workitems/?status=todo&search=async&sort=dueDate&page=1&pageSize=20'
 ```
 
 Status values are `0` (Todo), `1` (InProgress), and `2` (Done). Both UIs pick due dates with a date picker and list them as `DD-MM-YYYY`; the API uses ISO timestamps. `PUT /workitems/{id}` replaces the editable fields; `DELETE /workitems/{id}` removes the item.
+
+`GET /workitems/` returns `{ items, total, page, pageSize }`. Optional query parameters, all case-insensitive:
+`status` (`todo`, `inProgress`, `done`), `search` (title or description), `sort` (`dueDate` — default, undated last — `createdAt`, `title`, `status`), `desc` (`true`/`false`), `page` (from 1), `pageSize` (1–100, default 50). Invalid values return `400` with field errors.
 
 The API applies EF Core migrations at startup. The local database was baselined to the initial migration without removing existing items. Azure deployment remains a later step in the scaffold plan.

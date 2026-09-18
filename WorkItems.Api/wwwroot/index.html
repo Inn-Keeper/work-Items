@@ -32,7 +32,15 @@
         <button id="new-button" type="button" title="New item (N)">+ New item</button>
       </div>
 
-      <input id="search" type="search" placeholder="Search items…" aria-label="Search items">
+      <div class="search-row">
+        <input id="search" type="search" placeholder="Search items…" aria-label="Search items">
+        <select id="sort" aria-label="Sort by">
+          <option value="dueDate">Due date</option>
+          <option value="createdAt" data-desc="true">Newest</option>
+          <option value="title">Title</option>
+          <option value="status">Status</option>
+        </select>
+      </div>
       <div class="filters" role="group" aria-label="Filter by status">
         <button type="button" class="chip" data-filter="all" aria-pressed="true">All</button>
         <button type="button" class="chip" data-filter="0" aria-pressed="false">Todo</button>
@@ -41,6 +49,7 @@
       </div>
 
       <ul id="item-list" class="item-list" aria-label="Work items"></ul>
+      <button id="load-more" type="button" class="secondary small load-more" hidden>Load more</button>
     </section>
 
     <section class="panel editor-panel" aria-labelledby="form-heading">
