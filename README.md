@@ -25,7 +25,7 @@ Open http://localhost:5000/ in a browser. The web client is served from `WorkIte
 dotnet test WorkItems.sln
 ```
 
-The integration tests use a temporary SQLite database and cover web asset delivery, API and desktop-client CRUD, validation, missing items, and date conversion.
+The tests use a temporary SQLite database per test and cover the API (CRUD, validation, filtering, sorting, paging, tags, optimistic concurrency, ProblemDetails errors), the desktop HTTP client, and the desktop window itself: headless Avalonia tests drive `MainWindow` for double-save protection, conflict Reload/Overwrite, paging and tag filtering.
 
 ## macOS desktop
 

@@ -21,21 +21,21 @@ internal sealed class MainWindow : Window
         [("Due date", WorkItemSort.DueDate, false), ("Newest", WorkItemSort.CreatedAt, true), ("Title", WorkItemSort.Title, false), ("Status", WorkItemSort.Status, false)];
 
     private readonly WorkItemsClient _client;
-    private readonly ListBox _items = new() { Background = Brushes.Transparent };
+    private readonly ListBox _items = new() { Name = "Items", Background = Brushes.Transparent };
     private readonly TextBox _search = new() { PlaceholderText = "Search items…  (⌘F)" };
     private static readonly WorkItemStatus?[] FilterValues = [null, WorkItemStatus.Todo, WorkItemStatus.InProgress, WorkItemStatus.Done];
     private readonly ToggleButton[] _filters = new[] { "All" }.Concat(StatusLabels).Select(label => new ToggleButton { Content = label }).ToArray();
     private readonly ComboBox _sort = new() { ItemsSource = SortOptions.Select(option => option.Label).ToArray(), SelectedIndex = 0, MinWidth = 130 };
-    private readonly Button _loadMore = new() { Content = "Load more", HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0), IsVisible = false };
+    private readonly Button _loadMore = new() { Name = "LoadMore", Content = "Load more", HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0), IsVisible = false };
     private readonly DispatcherTimer _searchDelay = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly StackPanel _empty = new() { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _emptyText = new() { HorizontalAlignment = HorizontalAlignment.Center };
     private readonly Button _emptyCreate = new() { Content = "Create your first item", HorizontalAlignment = HorizontalAlignment.Center };
-    private readonly TextBox _title = new() { PlaceholderText = "What needs to be done?", MaxLength = WorkItemLimits.TitleMaxLength };
+    private readonly TextBox _title = new() { Name = "Title", PlaceholderText = "What needs to be done?", MaxLength = WorkItemLimits.TitleMaxLength };
     private readonly TextBlock _titleError = new() { Text = "Title is required.", FontSize = 12, IsVisible = false };
     private readonly TextBox _description = new() { PlaceholderText = "Add some context", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 110, MaxLength = WorkItemLimits.DescriptionMaxLength };
     private readonly TextBox _tags = new() { PlaceholderText = "Comma-separated, e.g. learning, ef-core" };
-    private readonly Button _tagFilterChip = new() { IsVisible = false, CornerRadius = new CornerRadius(99), Padding = new Thickness(12, 4), FontSize = 13, Classes = { "accent" } };
+    private readonly Button _tagFilterChip = new() { Name = "TagFilter", IsVisible = false, CornerRadius = new CornerRadius(99), Padding = new Thickness(12, 4), FontSize = 13, Classes = { "accent" } };
     private string? _tagFilter;
     private readonly ComboBox _status = new() { ItemsSource = StatusLabels, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly CalendarDatePicker _dueDate = new()
@@ -51,15 +51,15 @@ internal sealed class MainWindow : Window
     private readonly Button _delete = new() { Content = "Delete", Classes = { "danger-text" }, IsVisible = false };
     private readonly Button _retry = new() { Content = "Retry" };
     private readonly TextBlock _message = new() { TextWrapping = TextWrapping.Wrap };
-    private readonly Border _conflict = new() { IsVisible = false, CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10) };
-    private readonly Button _conflictReload = new() { Content = "Reload" };
-    private readonly Button _conflictOverwrite = new() { Content = "Overwrite", Classes = { "danger" } };
+    private readonly Border _conflict = new() { Name = "Conflict", IsVisible = false, CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10) };
+    private readonly Button _conflictReload = new() { Name = "ConflictReload", Content = "Reload" };
+    private readonly Button _conflictOverwrite = new() { Name = "ConflictOverwrite", Content = "Overwrite", Classes = { "danger" } };
     private bool _conflictOnDelete;
-    private readonly TextBlock _count = new();
+    private readonly TextBlock _count = new() { Name = "Count" };
     private readonly TextBlock _editorHeading = new() { Text = "New item", FontSize = 19, FontWeight = FontWeight.SemiBold };
     private readonly Border _banner = new() { IsVisible = false, CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 8) };
     private readonly TextBlock _bannerText = new() { VerticalAlignment = VerticalAlignment.Center };
-    private readonly Border _toast = new() { IsVisible = false, CornerRadius = new CornerRadius(99), Padding = new Thickness(18, 9), Margin = new Thickness(0, 0, 0, 24), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom };
+    private readonly Border _toast = new() { Name = "Toast", IsVisible = false, CornerRadius = new CornerRadius(99), Padding = new Thickness(18, 9), Margin = new Thickness(0, 0, 0, 24), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom };
     private readonly TextBlock _toastText = new() { FontWeight = FontWeight.SemiBold };
     private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(2.2) };
 
