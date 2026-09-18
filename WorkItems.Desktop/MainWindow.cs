@@ -10,77 +10,17 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using WorkItems.Contracts;
+using static WorkItems.Desktop.Theme;
 
 namespace WorkItems.Desktop;
 
 internal sealed class MainWindow : Window
 {
-    // Same palette as WorkItems.Api/wwwroot/css/styles.css — keep the two in sync.
-    // Key → (light, dark). Some keys override Fluent's own resources so built-in controls match.
-    private static readonly Dictionary<string, (string Light, string Dark)> Palette = new()
-    {
-        ["Canvas"] = ("#F4F6FA", "#0F131B"),
-        ["Surface"] = ("#FFFFFF", "#171C26"),
-        ["SurfaceHover"] = ("#F6F8FC", "#1D2330"),
-        ["Selected"] = ("#EEF2FF", "#232C45"),
-        ["Ink"] = ("#19233B", "#E7EBF3"),
-        ["Muted"] = ("#657189", "#9099AD"),
-        ["Line"] = ("#E2E7F0", "#272E3C"),
-        ["Accent"] = ("#405BD8", "#6D84F0"),
-        ["AccentSoft"] = ("#E7EDFF", "#232C45"),
-        ["Danger"] = ("#B13245", "#F07183"),
-        ["DangerSoft"] = ("#FBEAEC", "#3A1D24"),
-        ["TodoBg"] = ("#EDF0F5", "#262D3B"), ["TodoFg"] = ("#4F5A70", "#B4BCCD"),
-        ["ProgressBg"] = ("#E7EDFF", "#232C4D"), ["ProgressFg"] = ("#3249B8", "#9AABFF"),
-        ["DoneBg"] = ("#E4F5EC", "#15352A"), ["DoneFg"] = ("#1B7950", "#6FD3A4"),
-        ["AccentButtonBackground"] = ("#405BD8", "#6D84F0"),
-        ["AccentButtonBackgroundPointerOver"] = ("#3249B8", "#8497F3"),
-        ["AccentButtonBackgroundPressed"] = ("#2A3D9C", "#5A71DD"),
-        ["AccentButtonForeground"] = ("#FFFFFF", "#FFFFFF"),
-        ["AccentButtonForegroundPointerOver"] = ("#FFFFFF", "#FFFFFF"),
-        ["AccentButtonForegroundPressed"] = ("#FFFFFF", "#FFFFFF"),
-        ["SystemControlHighlightListLowBrush"] = ("#F6F8FC", "#1D2330"),
-        ["SystemControlHighlightListAccentLowBrush"] = ("#EEF2FF", "#232C45"),
-        ["SystemControlHighlightListAccentMediumBrush"] = ("#E4EAFF", "#2A3452"),
-        ["SystemControlHighlightListAccentHighBrush"] = ("#DAE2FF", "#303B5C"),
-        // Form fields sit just above the card surface instead of Fluent's near-black dark default.
-        ["TextControlBackground"] = ("#FFFFFF", "#1E2431"), ["TextControlBackgroundPointerOver"] = ("#F6F8FC", "#232A38"),
-        ["TextControlBackgroundFocused"] = ("#FFFFFF", "#232A38"), ["TextControlBorderBrush"] = ("#CDD5E2", "#333B4C"),
-        ["TextControlBorderBrushPointerOver"] = ("#B8C2D3", "#434C5F"), ["TextControlBorderBrushFocused"] = ("#405BD8", "#6D84F0"),
-        ["ComboBoxBackground"] = ("#FFFFFF", "#1E2431"), ["ComboBoxBackgroundPointerOver"] = ("#F6F8FC", "#232A38"),
-        ["ComboBoxBackgroundPressed"] = ("#EEF2FF", "#2A3141"), ["ComboBoxBackgroundUnfocused"] = ("#FFFFFF", "#1E2431"),
-        ["ComboBoxBorderBrush"] = ("#CDD5E2", "#333B4C"), ["ComboBoxBorderBrushPointerOver"] = ("#B8C2D3", "#434C5F"),
-        ["ComboBoxBorderBrushPressed"] = ("#405BD8", "#6D84F0"), ["ComboBoxDropDownBackground"] = ("#FFFFFF", "#1E2431"),
-        ["CalendarDatePickerBackground"] = ("#FFFFFF", "#1E2431"), ["CalendarDatePickerBackgroundPointerOver"] = ("#F6F8FC", "#232A38"),
-        ["CalendarDatePickerBackgroundFocused"] = ("#FFFFFF", "#232A38"), ["CalendarDatePickerBackgroundPressed"] = ("#EEF2FF", "#2A3141"),
-        ["CalendarDatePickerBorderBrush"] = ("#CDD5E2", "#333B4C"), ["CalendarDatePickerBorderBrushPointerOver"] = ("#B8C2D3", "#434C5F"),
-        ["CalendarDatePickerBorderBrushPressed"] = ("#405BD8", "#6D84F0"),
-        // Toggle buttons are only used as filter chips: outlined, accent-tinted when checked.
-        ["ToggleButtonBackground"] = ("#00FFFFFF", "#00000000"),
-        ["ToggleButtonBackgroundPointerOver"] = ("#F6F8FC", "#1D2330"),
-        ["ToggleButtonBackgroundPressed"] = ("#EEF2FF", "#232C45"),
-        ["ToggleButtonForeground"] = ("#657189", "#9099AD"),
-        ["ToggleButtonForegroundPointerOver"] = ("#19233B", "#E7EBF3"),
-        ["ToggleButtonForegroundPressed"] = ("#19233B", "#E7EBF3"),
-        ["ToggleButtonBorderBrush"] = ("#E2E7F0", "#333B4C"),
-        ["ToggleButtonBorderBrushPointerOver"] = ("#CDD5E2", "#434C5F"),
-        ["ToggleButtonBorderBrushPressed"] = ("#CDD5E2", "#434C5F"),
-        ["ToggleButtonBackgroundChecked"] = ("#E7EDFF", "#232C45"),
-        ["ToggleButtonBackgroundCheckedPointerOver"] = ("#DAE2FF", "#2A3452"),
-        ["ToggleButtonBackgroundCheckedPressed"] = ("#DAE2FF", "#2A3452"),
-        ["ToggleButtonForegroundChecked"] = ("#405BD8", "#9AABFF"),
-        ["ToggleButtonForegroundCheckedPointerOver"] = ("#405BD8", "#9AABFF"),
-        ["ToggleButtonForegroundCheckedPressed"] = ("#405BD8", "#9AABFF"),
-        ["ToggleButtonBorderBrushChecked"] = ("#00FFFFFF", "#00000000"),
-        ["ToggleButtonBorderBrushCheckedPointerOver"] = ("#00FFFFFF", "#00000000"),
-        ["ToggleButtonBorderBrushCheckedPressed"] = ("#00FFFFFF", "#00000000"),
-    };
-
     private static readonly string[] StatusLabels = ["Todo", "In progress", "Done"];
     private static readonly (string Label, WorkItemSort Sort, bool Desc)[] SortOptions =
         [("Due date", WorkItemSort.DueDate, false), ("Newest", WorkItemSort.CreatedAt, true), ("Title", WorkItemSort.Title, false), ("Status", WorkItemSort.Status, false)];
 
-    private readonly WorkItemsClient _client = new();
+    private readonly WorkItemsClient _client;
     private readonly ListBox _items = new() { Background = Brushes.Transparent };
     private readonly TextBox _search = new() { PlaceholderText = "Search items…  (⌘F)" };
     private static readonly WorkItemStatus?[] FilterValues = [null, WorkItemStatus.Todo, WorkItemStatus.InProgress, WorkItemStatus.Done];
@@ -133,8 +73,12 @@ internal sealed class MainWindow : Window
     private int _busyCount; // A counter, not a bool: a list load finishing must not re-enable Save mid-save.
     private bool _saving;   // Blocks a second save/delete while one is in flight (double ⌘S → duplicate item).
 
-    public MainWindow()
+    public MainWindow() : this(new WorkItemsClient()) { }
+
+    /// <summary>Takes the API client so tests can point the window at an in-memory API.</summary>
+    internal MainWindow(WorkItemsClient client)
     {
+        _client = client;
         Title = "Work Items";
         Width = 1000;
         Height = 700;
@@ -194,69 +138,6 @@ internal sealed class MainWindow : Window
         AddHandler(KeyDownEvent, OnShortcut, RoutingStrategies.Tunnel);
         Opened += async (_, _) => { _title.Focus(); await RefreshAsync(); };
         Closed += (_, _) => _client.Dispose();
-    }
-
-    /// <summary>Registers the light/dark palette and shared styles. Fluent follows the macOS appearance setting.</summary>
-    public static void ApplyTheme(Application app)
-    {
-        var resources = app.Resources;
-        var light = new ResourceDictionary();
-        var dark = new ResourceDictionary();
-        foreach (var (key, (lightHex, darkHex)) in Palette)
-        {
-            light[key] = Brush(lightHex);
-            dark[key] = Brush(darkHex);
-        }
-        resources.ThemeDictionaries[ThemeVariant.Light] = light;
-        resources.ThemeDictionaries[ThemeVariant.Dark] = dark;
-        resources["ListBoxItemPadding"] = new Thickness(12, 10);
-        AddStyles(app.Styles);
-    }
-
-    private static IBrush Brush(string hex) => new SolidColorBrush(Color.Parse(hex));
-
-    /// <summary>Binds a property to a palette key so it updates when the system theme changes.</summary>
-    private static T Themed<T>(T control, AvaloniaProperty property, string key) where T : Control
-    {
-        control.Bind(property, control.GetResourceObservable(key));
-        return control;
-    }
-
-    private static void AddStyles(Styles styles)
-    {
-        // Fixed reds: readable on both light and dark surfaces.
-        var danger = Brush("#C23B4E");
-        var dangerHover = Brush("#A93243");
-        var dangerText = Brush("#D9485B");
-        var presenter = (Selector x) => x.Template().OfType<ContentPresenter>();
-        styles.Add(new Style(x => x.OfType<Button>())
-        {
-            Setters = { new Setter(PaddingProperty, new Thickness(14, 7)), new Setter(CornerRadiusProperty, new CornerRadius(8)) }
-        });
-        styles.Add(new Style(x => x.OfType<TextBox>())
-        {
-            Setters = { new Setter(CornerRadiusProperty, new CornerRadius(8)) }
-        });
-        styles.Add(new Style(x => x.OfType<ListBoxItem>())
-        {
-            Setters = { new Setter(CornerRadiusProperty, new CornerRadius(10)), new Setter(MarginProperty, new Thickness(0, 0, 0, 4)) }
-        });
-        styles.Add(new Style(x => presenter(x.OfType<Button>().Class("danger")))
-        {
-            Setters = { new Setter(ContentPresenter.BackgroundProperty, danger), new Setter(ContentPresenter.ForegroundProperty, Brushes.White) }
-        });
-        styles.Add(new Style(x => presenter(x.OfType<Button>().Class("danger").Class(":pointerover")))
-        {
-            Setters = { new Setter(ContentPresenter.BackgroundProperty, dangerHover) }
-        });
-        styles.Add(new Style(x => presenter(x.OfType<Button>().Class("danger-text")))
-        {
-            Setters = { new Setter(ContentPresenter.BackgroundProperty, Brushes.Transparent), new Setter(ContentPresenter.ForegroundProperty, dangerText), new Setter(ContentPresenter.BorderBrushProperty, Brushes.Transparent) }
-        });
-        styles.Add(new Style(x => presenter(x.OfType<Button>().Class("danger-text").Class(":pointerover")))
-        {
-            Setters = { new Setter(ContentPresenter.BackgroundProperty, new SolidColorBrush(Color.Parse("#D9485B"), 0.12)) }
-        });
     }
 
     private static Control Header() => new StackPanel
@@ -555,16 +436,25 @@ internal sealed class MainWindow : Window
 
     private void OnShortcut(object? sender, KeyEventArgs e)
     {
-        var mod = e.KeyModifiers.HasFlag(KeyModifiers.Meta) || e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        if (mod && e.Key is Key.S or Key.Enter) { e.Handled = true; _ = SaveAsync(); }
-        else if (mod && e.Key == Key.N) { e.Handled = true; NewItem(); }
-        else if (mod && e.Key == Key.F) { e.Handled = true; _search.Focus(); _search.SelectAll(); }
-        // Esc cancels an edit, never wipes an unsaved new item, and leaves open dropdowns alone.
-        else if (e.Key == Key.Escape && _selected is not null && !_status.IsDropDownOpen && !_dueDate.IsDropDownOpen)
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Meta) && !e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            e.Handled = true;
-            NewItem();
+            // Esc cancels an edit, never wipes an unsaved new item, and leaves open dropdowns alone.
+            if (e.Key == Key.Escape && _selected is not null && !_status.IsDropDownOpen && !_dueDate.IsDropDownOpen)
+            {
+                e.Handled = true;
+                NewItem();
+            }
+            return;
         }
+
+        switch (e.Key)
+        {
+            case Key.S or Key.Enter: _ = SaveAsync(); break;
+            case Key.N: NewItem(); break;
+            case Key.F: _search.Focus(); _search.SelectAll(); break;
+            default: return;
+        }
+        e.Handled = true;
     }
 
     private void ShowToast(string text)

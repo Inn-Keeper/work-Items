@@ -13,7 +13,7 @@ internal static class Program
             .Start((app, _) =>
             {
                 app.Styles.Add(new FluentTheme());
-                MainWindow.ApplyTheme(app);
+                Theme.Apply(app);
                 var window = new MainWindow();
                 window.Show();
                 app.Run(window);

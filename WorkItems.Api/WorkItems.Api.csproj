@@ -8,6 +8,6 @@
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\WorkItems.Contracts\WorkItems.Contracts.csproj" />
+    <ProjectReference Include="../WorkItems.Contracts/WorkItems.Contracts.csproj" />
   </ItemGroup>
 </Project>
