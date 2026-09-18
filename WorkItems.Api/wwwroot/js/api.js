@@ -1,12 +1,12 @@
 const baseUrl = '/workitems/';
 
-// query: { status, search, sort, desc, page, pageSize } → { items, total, page, pageSize }
+// Empty values are left out so the API applies its defaults.
 export async function getItems(query = {}) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query))
     if (value !== null && value !== undefined && value !== '') params.set(key, value);
   const response = await fetch(`${baseUrl}?${params}`);
-  if (!response.ok) throw new Error('Could not load work items.');
+  await check(response, 'Could not load work items.');
   return response.json();
 }
 
@@ -19,8 +19,9 @@ async function check(response, fallback) {
   if (response.ok) return;
   if (response.status === 412) throw new VersionConflictError();
   if (response.status === 404) throw new Error('This item no longer exists. Refresh the list.');
-  const error = await response.json().catch(() => ({}));
-  throw new Error(Object.values(error.errors ?? {})[0]?.[0] ?? fallback);
+  // ProblemDetails: validation errors carry per-field messages; other errors only title/detail.
+  const problem = await response.json().catch(() => ({}));
+  throw new Error(Object.values(problem.errors ?? {})[0]?.[0] ?? problem.detail ?? problem.title ?? fallback);
 }
 
 const ifMatch = (item) => ({ 'If-Match': `"${item.version}"` });

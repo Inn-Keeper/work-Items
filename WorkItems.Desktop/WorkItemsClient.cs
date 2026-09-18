@@ -23,7 +23,9 @@ internal sealed class WorkItemsClient : IDisposable
         if (query.Status is { } status) url += $"&status={status}";
         if (!string.IsNullOrWhiteSpace(query.Search)) url += $"&search={Uri.EscapeDataString(query.Search.Trim())}";
         if (!string.IsNullOrWhiteSpace(query.Tag)) url += $"&tag={Uri.EscapeDataString(query.Tag)}";
-        return await _http.GetFromJsonAsync<ItemPage>(url, JsonOptions)
+        using var response = await _http.GetAsync(url);
+        await CheckResponseAsync(response);
+        return await response.Content.ReadFromJsonAsync<ItemPage>(JsonOptions)
             ?? throw new InvalidOperationException("API returned an empty response.");
     }
 
@@ -67,14 +69,17 @@ internal sealed class WorkItemsClient : IDisposable
         if (response.StatusCode == System.Net.HttpStatusCode.PreconditionFailed)
             throw new VersionConflictException();
 
-        var problem = await response.Content.ReadFromJsonAsync<ValidationProblem>(JsonOptions);
-        var fieldError = problem?.Errors?.Values.FirstOrDefault()?.FirstOrDefault();
-        throw new InvalidOperationException(fieldError ?? $"API returned {(int)response.StatusCode}.");
+        Problem? problem = null;
+        try { problem = await response.Content.ReadFromJsonAsync<Problem>(JsonOptions); }
+        catch (System.Text.Json.JsonException) { } // Not ProblemDetails (e.g. a proxy's HTML page); use the status code.
+        var message = problem?.Errors?.Values.FirstOrDefault()?.FirstOrDefault() ?? problem?.Detail ?? problem?.Title;
+        throw new InvalidOperationException(message ?? $"API returned {(int)response.StatusCode}.");
     }
 
     public void Dispose() => _http.Dispose();
 
-    private sealed record ValidationProblem(Dictionary<string, string[]>? Errors);
+    // ProblemDetails: validation errors carry per-field messages; other errors only Title/Detail.
+    private sealed record Problem(string? Title, string? Detail, Dictionary<string, string[]>? Errors);
 }
 
 /// <summary>The item changed on the server since this client loaded it (HTTP 412).</summary>

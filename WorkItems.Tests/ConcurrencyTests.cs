@@ -69,6 +69,14 @@ public sealed class ConcurrencyTests : IDisposable
     }
 
     [Fact]
+    public async Task MalformedIfMatchIsABadRequestNotAMissingHeader()
+    {
+        var created = await Create();
+        foreach (var value in new[] { "W/\"0\"", "*", "\"0\", \"1\"", "0", "\"abc\"" })
+            Assert.Equal(HttpStatusCode.BadRequest, (await Put(created.Id, value)).StatusCode);
+    }
+
+    [Fact]
     public async Task WriteBetweenReadAndSaveIsCaughtByTheDatabase()
     {
         var created = await Create();

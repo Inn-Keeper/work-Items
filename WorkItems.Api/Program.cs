@@ -6,9 +6,16 @@ builder.Services.AddDbContext<WorkItemsDb>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("WorkItems") ?? "Data Source=workitems.db"));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddProblemDetails();
 
 var app = builder.Build();
-// Apply versioned schema changes on startup.
+// Every error, including unhandled exceptions and bodiless 404s, returns ProblemDetails JSON,
+// so clients can always parse an error response the same way.
+app.UseExceptionHandler();
+app.UseStatusCodePages();
+
+// Fine for a single instance. With several instances (e.g. scaled-out App Service), run
+// migrations as a deploy step instead, so instances don't race to migrate on startup.
 using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<WorkItemsDb>().Database.MigrateAsync();
 
@@ -79,7 +86,7 @@ items.MapPost("/", async (WorkItemInput input, WorkItemsDb db, HttpResponse resp
 items.MapPut("/{id:int}", async (int id, WorkItemInput input, WorkItemsDb db, HttpRequest request, HttpResponse response) =>
 {
     if (Validate(input) is { } error) return Results.ValidationProblem(error);
-    if (IfMatchVersion(request) is not { } expected) return IfMatchRequired();
+    if (IfMatchVersion(request) is not { } expected) return IfMatchError(request);
     var item = await db.WorkItems.Include(item => item.Tags).SingleOrDefaultAsync(item => item.Id == id);
     if (item is null) return Results.NotFound();
 
@@ -103,7 +110,7 @@ items.MapPut("/{id:int}", async (int id, WorkItemInput input, WorkItemsDb db, Ht
 
 items.MapDelete("/{id:int}", async (int id, WorkItemsDb db, HttpRequest request) =>
 {
-    if (IfMatchVersion(request) is not { } expected) return IfMatchRequired();
+    if (IfMatchVersion(request) is not { } expected) return IfMatchError(request);
     var item = await db.WorkItems.FindAsync(id);
     if (item is null) return Results.NotFound();
     db.Entry(item).Property(value => value.Version).OriginalValue = expected;
@@ -126,8 +133,10 @@ static Dictionary<string, string[]>? Validate(WorkItemInput input)
 {
     if (string.IsNullOrWhiteSpace(input.Title))
         return new() { ["title"] = ["Title is required."] };
-    if (input.Title.Length > 200)
-        return new() { ["title"] = ["Title must be at most 200 characters."] };
+    if (input.Title.Length > WorkItem.TitleMaxLength)
+        return new() { ["title"] = [$"Title must be at most {WorkItem.TitleMaxLength} characters."] };
+    if (input.Description?.Length > WorkItem.DescriptionMaxLength)
+        return new() { ["description"] = [$"Description must be at most {WorkItem.DescriptionMaxLength} characters."] };
     if (!Enum.IsDefined(input.Status))
         return new() { ["status"] = ["Status is invalid."] };
     var tags = NormalizeTags(input.Tags);
@@ -156,12 +165,20 @@ static async Task<List<Tag>> ResolveTags(WorkItemsDb db, List<string> names)
 
 static string ETag(int version) => $"\"{version}\"";
 
-// Accepts If-Match: "3" (or W/"3"); returns null when missing or not a version number.
-static int? IfMatchVersion(HttpRequest request) =>
-    int.TryParse(request.Headers.IfMatch.ToString().Replace("W/", "").Trim('"'), out var version) ? version : null;
+// Only a single strong tag like "3" is a version. Weak tags (W/"3") can't be used with If-Match
+// (RFC 9110), and "*" or a list can't identify the version the client edited.
+static int? IfMatchVersion(HttpRequest request)
+{
+    var value = request.Headers.IfMatch.ToString();
+    return value.Length > 2 && value[0] == '"' && value[^1] == '"' && int.TryParse(value[1..^1], out var version)
+        ? version : null;
+}
 
-static IResult IfMatchRequired() => Results.Problem(statusCode: StatusCodes.Status428PreconditionRequired,
-    title: "If-Match header required", detail: "Send If-Match with the item's current ETag (its version).");
+static IResult IfMatchError(HttpRequest request) => request.Headers.IfMatch.Count == 0
+    ? Results.Problem(statusCode: StatusCodes.Status428PreconditionRequired,
+        title: "If-Match header required", detail: "Send If-Match with the item's current ETag (its version).")
+    : Results.Problem(statusCode: StatusCodes.Status400BadRequest,
+        title: "Invalid If-Match header", detail: "Send a single strong ETag, e.g. If-Match: \"3\".");
 
 static IResult VersionConflict() => Results.Problem(statusCode: StatusCodes.Status412PreconditionFailed,
     title: "Item was changed elsewhere", detail: "Reload the item, or retry with its current version to overwrite.");
@@ -194,11 +211,13 @@ static IOrderedQueryable<WorkItem> Sort(IQueryable<WorkItem> items, WorkItemSort
         ? items.OrderByDescending(item => EF.Functions.Collate(item.Title, "NOCASE"))
         : items.OrderBy(item => EF.Functions.Collate(item.Title, "NOCASE")),
     // Status is stored as text, so a cast or plain OrderBy would sort alphabetically; CASE keeps workflow order.
-    _ => desc ? items.OrderByDescending(StatusRank) : items.OrderBy(StatusRank),
+    WorkItemSort.Status => desc ? items.OrderByDescending(StatusRank) : items.OrderBy(StatusRank),
+    _ => throw new ArgumentOutOfRangeException(nameof(sort), sort, "Add a sort case for this option."),
 };
 
 public partial class Program
 {
+    // Must list every status in workflow order; anything unlisted sorts last.
     private static readonly System.Linq.Expressions.Expression<Func<WorkItem, int>> StatusRank = item =>
         item.Status == WorkItemStatus.Todo ? 0 : item.Status == WorkItemStatus.InProgress ? 1 : 2;
 }

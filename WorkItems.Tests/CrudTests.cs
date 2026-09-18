@@ -40,16 +40,38 @@ public sealed class CrudTests
         Assert.Equal(WorkItemStatus.Done, updated!.Status);
         Assert.Equal(created.CreatedAt, updated.CreatedAt);
 
-        client.DefaultRequestHeaders.TryAddWithoutValidation("If-Match", $"\"{updated.Version}\"");
-        var delete = await client.DeleteAsync($"/workitems/{created.Id}");
-        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await client.GetAsync($"/workitems/{created.Id}")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await client.DeleteAsync($"/workitems/{created.Id}")).StatusCode);
+        HttpRequestMessage Delete()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Delete, $"/workitems/{created.Id}");
+            request.Headers.TryAddWithoutValidation("If-Match", $"\"{updated.Version}\"");
+            return request;
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await client.SendAsync(Delete())).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/workitems/{created.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.SendAsync(Delete())).StatusCode);
+    }
 
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.PostAsJsonAsync("/workitems/",
-                new WorkItemInput(" ", null, WorkItemStatus.Todo, null))).StatusCode);
+    [Fact]
+    public async Task InvalidInputAndErrorsReturnProblemDetails()
+    {
+        using var api = new TestApi();
+        using var client = api.Factory.CreateClient();
+
+        foreach (var input in new[]
+        {
+            new WorkItemInput(" ", null, WorkItemStatus.Todo, null),
+            new WorkItemInput(new string('x', WorkItem.TitleMaxLength + 1), null, WorkItemStatus.Todo, null),
+            new WorkItemInput("Ok", new string('x', WorkItem.DescriptionMaxLength + 1), WorkItemStatus.Todo, null),
+        })
+        {
+            var response = await client.PostAsJsonAsync("/workitems/", input);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        }
+
+        // Bodiless results (404) also come back as ProblemDetails, so clients can parse every error.
+        var missing = await client.GetAsync("/workitems/999");
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal("application/problem+json", missing.Content.Headers.ContentType?.MediaType);
     }
 }

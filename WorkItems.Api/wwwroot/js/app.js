@@ -36,6 +36,7 @@ let requestId = 0;   // ignore responses that arrive after a newer query was sen
 let toastTimer;
 let searchTimer;
 let conflictOnDelete = false;
+let saving = false;  // blocks a second save/delete while one is in flight (double ⌘S → duplicate item)
 
 function showToast(text) {
   toast.textContent = text;
@@ -107,14 +108,16 @@ async function loadItems(pageToLoad = 1) {
     ({ total, page } = result);
     banner.hidden = true;
     render();
-  } catch {
+  } catch (error) {
     if (id !== requestId) return;
-    $('#banner-text').textContent = 'Cannot reach the Work Items API.';
+    // fetch only rejects (TypeError) when the request never got a response; server errors have their own message.
+    $('#banner-text').textContent = error instanceof TypeError ? 'Cannot reach the Work Items API.' : error.message;
     banner.hidden = false;
   }
 }
 
 async function save() {
+  if (saving) return;
   const title = titleField.value.trim();
   if (!title) {
     setTitleError(true);
@@ -123,7 +126,7 @@ async function save() {
   }
   setTitleError(false);
 
-  saveButton.disabled = true;
+  saving = saveButton.disabled = true;
   message.textContent = '';
   try {
     const saved = await saveItem(selected, {
@@ -138,7 +141,7 @@ async function save() {
     fillForm(saved);
     await loadItems();
   } catch (error) { handleError(error, false); }
-  finally { saveButton.disabled = false; }
+  finally { saving = saveButton.disabled = false; }
 }
 
 function handleError(error, onDelete) {
@@ -182,12 +185,15 @@ async function deleteSelected() {
 }
 
 async function removeSelected() {
+  if (saving) return;
+  saving = true;
   try {
     await removeItem(selected);
     fillForm(null);
     showToast('Item deleted');
     await loadItems();
   } catch (error) { handleError(error, true); }
+  finally { saving = false; }
 }
 
 form.addEventListener('submit', (event) => { event.preventDefault(); save(); });

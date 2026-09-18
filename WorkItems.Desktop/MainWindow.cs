@@ -82,6 +82,7 @@ internal sealed class MainWindow : Window
     private readonly WorkItemsClient _client = new();
     private readonly ListBox _items = new() { Background = Brushes.Transparent };
     private readonly TextBox _search = new() { PlaceholderText = "Search items…  (⌘F)" };
+    private static readonly WorkItemStatus?[] FilterValues = [null, WorkItemStatus.Todo, WorkItemStatus.InProgress, WorkItemStatus.Done];
     private readonly ToggleButton[] _filters = new[] { "All" }.Concat(StatusLabels).Select(label => new ToggleButton { Content = label }).ToArray();
     private readonly ComboBox _sort = new() { ItemsSource = SortOptions.Select(option => option.Label).ToArray(), SelectedIndex = 0, MinWidth = 130 };
     private readonly Button _loadMore = new() { Content = "Load more", HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 8, 0, 0), IsVisible = false };
@@ -89,9 +90,10 @@ internal sealed class MainWindow : Window
     private readonly StackPanel _empty = new() { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _emptyText = new() { HorizontalAlignment = HorizontalAlignment.Center };
     private readonly Button _emptyCreate = new() { Content = "Create your first item", HorizontalAlignment = HorizontalAlignment.Center };
+    // Limits mirror WorkItem.TitleMaxLength / DescriptionMaxLength in the API.
     private readonly TextBox _title = new() { PlaceholderText = "What needs to be done?", MaxLength = 200 };
     private readonly TextBlock _titleError = new() { Text = "Title is required.", FontSize = 12, IsVisible = false };
-    private readonly TextBox _description = new() { PlaceholderText = "Add some context", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 110 };
+    private readonly TextBox _description = new() { PlaceholderText = "Add some context", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 110, MaxLength = 2000 };
     private readonly TextBox _tags = new() { PlaceholderText = "Comma-separated, e.g. learning, ef-core" };
     private readonly Button _tagFilterChip = new() { IsVisible = false, CornerRadius = new CornerRadius(99), Padding = new Thickness(12, 4), FontSize = 13, Classes = { "accent" } };
     private string? _tagFilter;
@@ -126,9 +128,10 @@ internal sealed class MainWindow : Window
     private int _page;
     private int _requestId; // Ignore responses that arrive after a newer query was sent.
     private WorkItem? _selected;
-    private int _filter = -1; // -1 = all, otherwise a WorkItemStatus
+    private WorkItemStatus? _statusFilter;
     private bool _syncingList;
-    private bool _busy;
+    private int _busyCount; // A counter, not a bool: a list load finishing must not re-enable Save mid-save.
+    private bool _saving;   // Blocks a second save/delete while one is in flight (double ⌘S → duplicate item).
 
     public MainWindow()
     {
@@ -174,8 +177,8 @@ internal sealed class MainWindow : Window
         _loadMore.Click += async (_, _) => await LoadPageAsync(_page + 1);
         for (var i = 0; i < _filters.Length; i++)
         {
-            var status = i - 1;
-            _filters[i].Click += async (_, _) => { _filter = status; await RefreshAsync(); };
+            var status = FilterValues[i];
+            _filters[i].Click += async (_, _) => { _statusFilter = status; await RefreshAsync(); };
         }
         _title.TextChanged += (_, _) => { if (!string.IsNullOrWhiteSpace(_title.Text)) _titleError.IsVisible = false; };
         _save.Click += async (_, _) => await SaveAsync();
@@ -502,7 +505,7 @@ internal sealed class MainWindow : Window
 
     private void ApplyFilterChips()
     {
-        for (var i = 0; i < _filters.Length; i++) _filters[i].IsChecked = i - 1 == _filter;
+        for (var i = 0; i < _filters.Length; i++) _filters[i].IsChecked = FilterValues[i] == _statusFilter;
     }
 
     private void RenderList()
@@ -513,7 +516,7 @@ internal sealed class MainWindow : Window
         _items.SelectedItem = _loaded.FirstOrDefault(item => item.Id == _selected?.Id);
         _syncingList = false;
 
-        var filtered = _filter >= 0 || _tagFilter is not null || !string.IsNullOrWhiteSpace(_search.Text);
+        var filtered = _statusFilter is not null || _tagFilter is not null || !string.IsNullOrWhiteSpace(_search.Text);
         _count.Text = _total == 1 ? "1 item" : $"{_total} items";
         _loadMore.IsVisible = _loaded.Count < _total;
         _empty.IsVisible = _loaded.Count == 0 && !_banner.IsVisible;
@@ -578,7 +581,7 @@ internal sealed class MainWindow : Window
     {
         var requestId = ++_requestId;
         var (_, sort, desc) = SortOptions[Math.Max(_sort.SelectedIndex, 0)];
-        var query = new ItemQuery(_filter < 0 ? null : (WorkItemStatus)_filter, _search.Text, _tagFilter, sort, desc, page);
+        var query = new ItemQuery(_statusFilter, _search.Text, _tagFilter, sort, desc, page);
         SetBusy(true);
         try
         {
@@ -592,7 +595,8 @@ internal sealed class MainWindow : Window
         catch (Exception error)
         {
             if (requestId != _requestId) return;
-            _bannerText.Text = error is HttpRequestException
+            // Only a failed connection means the API is down; a server error has its own message.
+            _bannerText.Text = error is HttpRequestException { StatusCode: null }
                 ? "Cannot reach the Work Items API. Start WorkItems.Api and retry."
                 : error.Message;
             _banner.IsVisible = true;
@@ -606,7 +610,7 @@ internal sealed class MainWindow : Window
 
     private async Task SaveAsync()
     {
-        if (_busy) return;
+        if (_saving) return;
         var title = _title.Text?.Trim();
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -622,6 +626,7 @@ internal sealed class MainWindow : Window
             (_tags.Text ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
         var editing = _selected;
 
+        _saving = true;
         SetBusy(true);
         try
         {
@@ -632,7 +637,7 @@ internal sealed class MainWindow : Window
         }
         catch (VersionConflictException) { ShowConflict(onDelete: false); }
         catch (Exception error) { _message.Text = error.Message; }
-        finally { SetBusy(false); }
+        finally { SetBusy(false); _saving = false; }
     }
 
     private async Task DeleteAsync()
@@ -644,7 +649,8 @@ internal sealed class MainWindow : Window
 
     private async Task DeleteSelectedAsync()
     {
-        if (_selected is not { } item) return;
+        if (_selected is not { } item || _saving) return;
+        _saving = true;
         SetBusy(true);
         try
         {
@@ -655,7 +661,7 @@ internal sealed class MainWindow : Window
         }
         catch (VersionConflictException) { ShowConflict(onDelete: true); }
         catch (Exception error) { _message.Text = error.Message; }
-        finally { SetBusy(false); }
+        finally { SetBusy(false); _saving = false; }
     }
 
     private void ShowConflict(bool onDelete)
@@ -730,7 +736,8 @@ internal sealed class MainWindow : Window
 
     private void SetBusy(bool busy)
     {
-        _busy = busy;
+        _busyCount += busy ? 1 : -1;
+        busy = _busyCount > 0;
         _save.IsEnabled = !busy;
         _new.IsEnabled = !busy;
         _delete.IsEnabled = !busy;

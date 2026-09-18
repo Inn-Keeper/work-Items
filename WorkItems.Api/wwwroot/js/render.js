@@ -1,6 +1,6 @@
 import { formatDate, isOverdue } from './date.js';
 
-export const statuses = ['Todo', 'In progress', 'Done'];
+const statuses = ['Todo', 'In progress', 'Done'];
 
 function el(tag, className, text) {
   const node = document.createElement(tag);

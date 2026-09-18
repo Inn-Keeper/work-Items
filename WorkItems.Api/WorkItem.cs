@@ -8,8 +8,11 @@ public enum WorkItemStatus { Todo, InProgress, Done }
 // EF Core entity: storage details stay inside the API.
 public sealed class WorkItem
 {
+    public const int TitleMaxLength = 200;
+    public const int DescriptionMaxLength = 2000;
+
     public int Id { get; set; }
-    [Required, MaxLength(200)] public string Title { get; set; } = "";
+    [Required, MaxLength(TitleMaxLength)] public string Title { get; set; } = "";
     public string? Description { get; set; }
     public WorkItemStatus Status { get; set; }
     public DateTimeOffset? DueDate { get; set; }
@@ -30,9 +33,10 @@ public sealed class Tag
 
 public sealed record TagCount(string Name, int Count);
 
-// Only editable fields come from the client; Id and CreatedAt are server-owned.
+// Only editable fields come from the client; Id, CreatedAt and Version are server-owned
+// (the client echoes Version back in If-Match, not in the body).
 public sealed record WorkItemInput(
-    [property: Required, MaxLength(200)] string Title,
+    [property: Required, MaxLength(WorkItem.TitleMaxLength)] string Title,
     string? Description,
     WorkItemStatus Status,
     DateTimeOffset? DueDate,
