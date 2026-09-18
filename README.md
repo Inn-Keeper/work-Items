@@ -17,7 +17,7 @@ dotnet restore WorkItems.sln
 dotnet run --project WorkItems.Api --urls http://localhost:5000
 ```
 
-Open http://localhost:5000/ in a browser. The web client is served from `WorkItems.Api/wwwroot`; http://localhost:5000/swagger exposes the API. SQLite stores items in `WorkItems.Api/workitems.db`.
+Open http://localhost:5000/ in a browser. The web client is served from `WorkItems.Api/wwwroot`; http://localhost:5000/swagger exposes the API in Development, which `dotnet run` uses via `Properties/launchSettings.json`; other environments don't serve it. SQLite stores items in `WorkItems.Api/workitems.db`.
 
 ## Test
 

@@ -19,8 +19,12 @@ app.UseStatusCodePages();
 using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<WorkItemsDb>().Database.MigrateAsync();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+// API docs are for local exploration; `dotnet run` uses Properties/launchSettings.json (Development).
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
