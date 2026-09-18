@@ -2,6 +2,12 @@
 
 A .NET 10 work-item tracker with a browser UI and an Avalonia macOS client. Both use the same API and SQLite data.
 
+| Web | macOS desktop |
+| --- | --- |
+| ![Web client](docs/screenshots/web.png) | ![Desktop client](docs/screenshots/desktop.png) |
+
+![Swagger UI for the API](docs/screenshots/swagger.png)
+
 ## Web
 
 Install the .NET 10 SDK, then from this directory:
