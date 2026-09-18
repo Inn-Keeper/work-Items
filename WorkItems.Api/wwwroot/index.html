@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Work Items</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="/js/app.js" type="module"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Work Items</h1>
+      <p class="subtitle">Plan what matters, keep it moving.</p>
+    </div>
+    <a href="/swagger" class="docs-link">API docs ↗</a>
+  </header>
+
+  <div id="banner" class="banner" role="alert" hidden>
+    <span id="banner-text"></span>
+    <button id="retry-button" type="button" class="secondary small">Retry</button>
+  </div>
+
+  <main class="layout">
+    <section class="panel list-panel" aria-labelledby="list-heading">
+      <div class="panel-head">
+        <div>
+          <h2 id="list-heading">Your items</h2>
+          <span id="count" class="muted"></span>
+        </div>
+        <button id="new-button" type="button" title="New item (N)">+ New item</button>
+      </div>
+
+      <input id="search" type="search" placeholder="Search items…" aria-label="Search items">
+      <div class="filters" role="group" aria-label="Filter by status">
+        <button type="button" class="chip" data-filter="all" aria-pressed="true">All</button>
+        <button type="button" class="chip" data-filter="0" aria-pressed="false">Todo</button>
+        <button type="button" class="chip" data-filter="1" aria-pressed="false">In progress</button>
+        <button type="button" class="chip" data-filter="2" aria-pressed="false">Done</button>
+      </div>
+
+      <ul id="item-list" class="item-list" aria-label="Work items"></ul>
+    </section>
+
+    <section class="panel editor-panel" aria-labelledby="form-heading">
+      <div class="panel-head">
+        <h2 id="form-heading">New item</h2>
+        <button id="delete-button" type="button" class="danger small" hidden>Delete</button>
+      </div>
+      <form id="item-form" novalidate>
+        <label for="title">Title</label>
+        <input id="title" name="title" maxlength="200" required placeholder="What needs to be done?" aria-describedby="title-error">
+        <p id="title-error" class="field-error" hidden>Title is required.</p>
+
+        <label for="description">Description <span>optional</span></label>
+        <textarea id="description" name="description" rows="5" placeholder="Add some context"></textarea>
+
+        <div class="fields">
+          <div>
+            <label for="status">Status</label>
+            <select id="status" name="status">
+              <option value="0">Todo</option>
+              <option value="1">In progress</option>
+              <option value="2">Done</option>
+            </select>
+          </div>
+          <div>
+            <label for="due-date">Due date <span>optional</span></label>
+            <input id="due-date" name="due-date" type="date">
+          </div>
+        </div>
+
+        <p id="message" class="form-error" role="alert"></p>
+
+        <div class="form-actions">
+          <button id="save-button" type="submit">Add item</button>
+          <button id="cancel-button" type="button" class="secondary" hidden>Cancel</button>
+          <span class="hint muted">⌘/Ctrl + S to save · Esc to cancel</span>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <dialog id="confirm-dialog" aria-labelledby="confirm-title">
+    <form method="dialog">
+      <h2 id="confirm-title">Delete item?</h2>
+      <p id="confirm-text" class="muted"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="secondary" autofocus>Cancel</button>
+        <button value="delete" class="danger-solid">Delete</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
