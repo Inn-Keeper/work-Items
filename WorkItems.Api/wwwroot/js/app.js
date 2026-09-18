@@ -18,6 +18,8 @@ const titleError = $('#title-error');
 const descriptionField = $('#description');
 const statusField = $('#status');
 const dueDateField = $('#due-date');
+const tagsField = $('#tags');
+const tagFilterChip = $('#tag-filter');
 const banner = $('#banner');
 const toast = $('#toast');
 const confirmDialog = $('#confirm-dialog');
@@ -29,6 +31,7 @@ let total = 0;
 let page = 1;
 let selected = null; // item in the editor; may be outside the loaded pages
 let filter = 'all';
+let tagFilter = null;
 let requestId = 0;   // ignore responses that arrive after a newer query was sent
 let toastTimer;
 let searchTimer;
@@ -49,8 +52,15 @@ function setTitleError(show) {
 function render() {
   $('#count').textContent = `${total} item${total === 1 ? '' : 's'}`;
   loadMoreButton.hidden = items.length >= total;
-  const filtered = filter !== 'all' || search.value.trim() !== '';
-  renderItems(list, items, { selectedId: selected?.id, filtered, onSelect: select, onNew: newItem });
+  const filtered = filter !== 'all' || tagFilter !== null || search.value.trim() !== '';
+  renderItems(list, items, { selectedId: selected?.id, filtered, onSelect: select, onNew: newItem, onTag: filterByTag });
+}
+
+function filterByTag(tag) {
+  tagFilter = tag;
+  tagFilterChip.textContent = `#${tag} ✕`;
+  tagFilterChip.hidden = tag === null;
+  loadItems();
 }
 
 function fillForm(item) {
@@ -59,6 +69,7 @@ function fillForm(item) {
   descriptionField.value = item?.description ?? '';
   statusField.value = String(item?.status ?? 0);
   dueDateField.value = toInputDate(item?.dueDate);
+  tagsField.value = (item?.tags ?? []).join(', ');
   heading.textContent = item ? 'Edit item' : 'New item';
   saveButton.textContent = item ? 'Save changes' : 'Add item';
   cancelButton.hidden = !item;
@@ -86,6 +97,7 @@ async function loadItems(pageToLoad = 1) {
     const result = await getItems({
       status: filter === 'all' ? null : filter,
       search: search.value.trim(),
+      tag: tagFilter,
       sort: option.value,
       desc: option.dataset.desc === 'true',
       page: pageToLoad
@@ -118,7 +130,8 @@ async function save() {
       title,
       description: descriptionField.value.trim() || null,
       status: Number(statusField.value),
-      dueDate: fromInputDate(dueDateField.value)
+      dueDate: fromInputDate(dueDateField.value),
+      tags: tagsField.value.split(',').map((tag) => tag.trim()).filter(Boolean)
     });
     showToast(selected ? 'Changes saved' : 'Item added');
     // Keep editing the saved item even if the current filter or page hides it.
@@ -184,6 +197,7 @@ deleteButton.addEventListener('click', deleteSelected);
 $('#conflict-reload').addEventListener('click', () => resolveConflict(false));
 conflictOverwrite.addEventListener('click', () => resolveConflict(true));
 $('#new-button').addEventListener('click', newItem);
+tagFilterChip.addEventListener('click', () => filterByTag(null));
 $('#retry-button').addEventListener('click', () => loadItems());
 loadMoreButton.addEventListener('click', () => loadItems(page + 1));
 sortField.addEventListener('change', () => loadItems());

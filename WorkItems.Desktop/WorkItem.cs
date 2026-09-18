@@ -6,7 +6,7 @@ internal enum WorkItemStatus { Todo, InProgress, Done }
 
 internal sealed record WorkItem(
     int Id, string Title, string? Description, WorkItemStatus Status,
-    DateTimeOffset? DueDate, DateTimeOffset CreatedAt, int Version)
+    DateTimeOffset? DueDate, DateTimeOffset CreatedAt, int Version, List<string>? Tags = null)
 {
     public override string ToString() =>
         $"{StatusLabel(Status),-12}  {Title}" +
@@ -34,12 +34,13 @@ internal sealed record WorkItem(
 }
 
 internal sealed record WorkItemInput(
-    string Title, string? Description, WorkItemStatus Status, DateTimeOffset? DueDate);
+    string Title, string? Description, WorkItemStatus Status, DateTimeOffset? DueDate,
+    IReadOnlyList<string>? Tags = null);
 
 internal enum ItemSort { DueDate, CreatedAt, Title, Status }
 
 internal sealed record ItemQuery(
-    WorkItemStatus? Status = null, string? Search = null, ItemSort Sort = ItemSort.DueDate,
+    WorkItemStatus? Status = null, string? Search = null, string? Tag = null, ItemSort Sort = ItemSort.DueDate,
     bool Desc = false, int Page = 1, int PageSize = 50);
 
 internal sealed record ItemPage(List<WorkItem> Items, int Total, int Page, int PageSize);

@@ -37,20 +37,26 @@ items.MapGet("/", async ([AsParameters] WorkItemQuery query, WorkItemsDb db) =>
                                           (item.Description != null && EF.Functions.Like(item.Description, pattern, @"\")));
     }
 
+    if (!string.IsNullOrWhiteSpace(query.Tag))
+    {
+        var tag = query.Tag.Trim();
+        filtered = filtered.Where(item => item.Tags.Any(value => value.Name == tag));
+    }
+
     var total = await filtered.CountAsync();
     var page = await Sort(filtered, sort, query.Desc).ThenBy(item => item.Id)
         .Skip((query.Page - 1) * query.PageSize).Take(query.PageSize)
+        .Select(WorkItemResponse.Projection)
         .ToListAsync();
-    return Results.Ok(new PagedResponse<WorkItemResponse>(
-        page.Select(WorkItemResponse.From).ToList(), total, query.Page, query.PageSize));
+    return Results.Ok(new PagedResponse<WorkItemResponse>(page, total, query.Page, query.PageSize));
 }).Produces<PagedResponse<WorkItemResponse>>(200).Produces(400);
 
 items.MapGet("/{id:int}", async (int id, WorkItemsDb db, HttpResponse response) =>
 {
-    var item = await db.WorkItems.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id);
+    var item = await db.WorkItems.Where(item => item.Id == id).Select(WorkItemResponse.Projection).SingleOrDefaultAsync();
     if (item is null) return Results.NotFound();
     response.Headers.ETag = ETag(item.Version);
-    return Results.Ok(WorkItemResponse.From(item));
+    return Results.Ok(item);
 }).Produces<WorkItemResponse>(200).Produces(404);
 
 items.MapPost("/", async (WorkItemInput input, WorkItemsDb db, HttpResponse response) =>
@@ -59,7 +65,8 @@ items.MapPost("/", async (WorkItemInput input, WorkItemsDb db, HttpResponse resp
     var item = new WorkItem
     {
         Title = input.Title.Trim(), Description = input.Description,
-        Status = input.Status, DueDate = input.DueDate?.ToUniversalTime()
+        Status = input.Status, DueDate = input.DueDate?.ToUniversalTime(),
+        Tags = await ResolveTags(db, NormalizeTags(input.Tags))
     };
     db.WorkItems.Add(item);
     await db.SaveChangesAsync();
@@ -73,7 +80,7 @@ items.MapPut("/{id:int}", async (int id, WorkItemInput input, WorkItemsDb db, Ht
 {
     if (Validate(input) is { } error) return Results.ValidationProblem(error);
     if (IfMatchVersion(request) is not { } expected) return IfMatchRequired();
-    var item = await db.WorkItems.FindAsync(id);
+    var item = await db.WorkItems.Include(item => item.Tags).SingleOrDefaultAsync(item => item.Id == id);
     if (item is null) return Results.NotFound();
 
     // Compare against the client's version, not the one just read: the check happens in the
@@ -83,6 +90,9 @@ items.MapPut("/{id:int}", async (int id, WorkItemInput input, WorkItemsDb db, Ht
     item.Description = input.Description;
     item.Status = input.Status;
     item.DueDate = input.DueDate?.ToUniversalTime();
+    var tags = await ResolveTags(db, NormalizeTags(input.Tags));
+    item.Tags.Clear();
+    item.Tags.AddRange(tags); // EF diffs the join rows; bumping Version still guards the whole edit.
     item.Version = expected + 1;
     try { await db.SaveChangesAsync(); }
     catch (DbUpdateConcurrencyException) { return VersionConflict(); }
@@ -103,6 +113,12 @@ items.MapDelete("/{id:int}", async (int id, WorkItemsDb db, HttpRequest request)
     return Results.NoContent();
 }).Produces(204).Produces(404).Produces(412).Produces(428);
 
+// Tags in use, for filter suggestions. Tags left without items stay in the table but are hidden here.
+app.MapGet("/tags", async (WorkItemsDb db) =>
+    await db.Tags.Where(tag => tag.WorkItems.Any()).OrderBy(tag => tag.Name)
+        .Select(tag => new TagCount(tag.Name, tag.WorkItems.Count)).ToListAsync())
+    .Produces<List<TagCount>>(200);
+
 app.Run();
 
 // Return field errors as ProblemDetails before writing to the database.
@@ -114,7 +130,28 @@ static Dictionary<string, string[]>? Validate(WorkItemInput input)
         return new() { ["title"] = ["Title must be at most 200 characters."] };
     if (!Enum.IsDefined(input.Status))
         return new() { ["status"] = ["Status is invalid."] };
+    var tags = NormalizeTags(input.Tags);
+    if (tags.Count > WorkItemInput.MaxTags)
+        return new() { ["tags"] = [$"Use at most {WorkItemInput.MaxTags} tags."] };
+    if (tags.Any(tag => tag.Length > Tag.MaxLength))
+        return new() { ["tags"] = [$"Each tag must be at most {Tag.MaxLength} characters."] };
     return null;
+}
+
+// Trimmed, blanks dropped, duplicates removed ignoring case (first spelling wins).
+static List<string> NormalizeTags(IReadOnlyList<string>? tags) =>
+    (tags ?? []).Select(tag => tag.Trim()).Where(tag => tag.Length > 0)
+        .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+// Reuses existing tags (matched case-insensitively via the NOCASE column) and creates the rest.
+// ponytail: two requests creating the same new tag at once hit the unique index (500); retry on conflict if that matters.
+static async Task<List<Tag>> ResolveTags(WorkItemsDb db, List<string> names)
+{
+    if (names.Count == 0) return [];
+    var existing = await db.Tags.Where(tag => names.Contains(tag.Name)).ToListAsync();
+    return names.Select(name =>
+        existing.FirstOrDefault(tag => string.Equals(tag.Name, name, StringComparison.OrdinalIgnoreCase))
+        ?? new Tag { Name = name }).ToList();
 }
 
 static string ETag(int version) => $"\"{version}\"";

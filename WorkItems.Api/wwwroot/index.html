@@ -46,6 +46,7 @@
         <button type="button" class="chip" data-filter="0" aria-pressed="false">Todo</button>
         <button type="button" class="chip" data-filter="1" aria-pressed="false">In progress</button>
         <button type="button" class="chip" data-filter="2" aria-pressed="false">Done</button>
+        <button id="tag-filter" type="button" class="chip" aria-pressed="true" title="Clear tag filter" hidden></button>
       </div>
 
       <ul id="item-list" class="item-list" aria-label="Work items"></ul>
@@ -69,6 +70,9 @@
 
         <label for="description">Description <span>optional</span></label>
         <textarea id="description" name="description" rows="5" placeholder="Add some context"></textarea>
+
+        <label for="tags">Tags <span>optional, comma-separated</span></label>
+        <input id="tags" name="tags" placeholder="e.g. learning, ef-core">
 
         <div class="fields">
           <div>

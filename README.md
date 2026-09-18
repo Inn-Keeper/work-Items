@@ -59,6 +59,15 @@ curl -X PUT http://localhost:5000/workitems/1 -H 'If-Match: "0"' -H 'Content-Typ
 ```
 
 `GET /workitems/` returns `{ items, total, page, pageSize }`. Optional query parameters, all case-insensitive:
-`status` (`todo`, `inProgress`, `done`), `search` (title or description), `sort` (`dueDate` — default, undated last — `createdAt`, `title`, `status`), `desc` (`true`/`false`), `page` (from 1), `pageSize` (1–100, default 50). Invalid values return `400` with field errors.
+`status` (`todo`, `inProgress`, `done`), `search` (title or description), `tag`, `sort` (`dueDate` — default, undated last — `createdAt`, `title`, `status`), `desc` (`true`/`false`), `page` (from 1), `pageSize` (1–100, default 50). Invalid values return `400` with field errors.
+
+Items carry `tags` (string array; at most 10, each up to 30 characters). Tags are shared and matched case-insensitively, so `EF-Core` and `ef-core` are the same tag. `GET /tags` lists tags in use with their item counts. In both UIs, click a tag on an item to filter by it.
 
 The API applies EF Core migrations at startup. The local database was baselined to the initial migration without removing existing items. Azure deployment remains a later step in the scaffold plan.
+
+To add a migration after changing the model, use the repo-local EF tool:
+
+```sh
+dotnet tool restore
+dotnet ef migrations add <Name> --project WorkItems.Api
+```

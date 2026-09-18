@@ -9,7 +9,7 @@ function el(tag, className, text) {
   return node;
 }
 
-export function renderItems(list, items, { selectedId, filtered, onSelect, onNew }) {
+export function renderItems(list, items, { selectedId, filtered, onSelect, onNew, onTag }) {
   list.replaceChildren();
 
   if (!items.length) {
@@ -43,8 +43,20 @@ export function renderItems(list, items, { selectedId, filtered, onSelect, onNew
     }
     button.append(meta);
 
-    const row = el('li');
+    const row = el('li', item.id === selectedId ? 'item-row selected' : 'item-row');
     row.append(button);
+    // Tag buttons sit beside the item button, not inside it (buttons can't nest).
+    if (item.tags?.length) {
+      const tags = el('div', 'item-tags');
+      for (const name of item.tags) {
+        const tag = el('button', 'tag', `#${name}`);
+        tag.type = 'button';
+        tag.setAttribute('aria-label', `Show items tagged ${name}`);
+        tag.addEventListener('click', () => onTag(name));
+        tags.append(tag);
+      }
+      row.append(tags);
+    }
     list.append(row);
   }
 }

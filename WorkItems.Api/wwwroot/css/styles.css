@@ -161,6 +161,9 @@ button.danger-solid:hover { background: var(--danger); filter: brightness(1.1); 
 
 .item-list { flex: 1; overflow-y: auto; margin: 0 -8px; padding: 0 8px; list-style: none; }
 .item-list li + li { margin-top: 6px; }
+.item-row { border: 1px solid transparent; border-radius: 11px; }
+.item-row:hover { background: var(--surface-hover); }
+.item-row.selected { background: var(--selected); border-color: var(--accent); }
 .item {
   display: block;
   width: 100%;
@@ -169,11 +172,12 @@ button.danger-solid:hover { background: var(--danger); filter: brightness(1.1); 
   font-weight: 400;
   color: var(--ink);
   background: transparent;
-  border: 1px solid transparent;
   border-radius: 11px;
 }
-.item:hover { background: var(--surface-hover); }
-.item[aria-current="true"] { background: var(--selected); border-color: var(--accent); }
+.item:hover { background: transparent; }
+.item-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: -6px; padding: 0 10px 10px; }
+.tag { padding: 1px 7px; font-size: .75rem; color: var(--accent); background: transparent; border-radius: 99px; }
+.tag:hover { background: var(--accent-soft); }
 .item-title { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-title.done { color: var(--muted); text-decoration: line-through; }
 .item-desc { display: block; margin-top: 2px; color: var(--muted); font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -194,7 +198,7 @@ button.danger-solid:hover { background: var(--danger); filter: brightness(1.1); 
 label { display: block; margin: 14px 0 6px; font-size: .9rem; font-weight: 600; }
 label:first-child { margin-top: 0; }
 label span { color: var(--muted); font-weight: 400; }
-.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
 .field-error, .form-error { margin: 6px 0 0; color: var(--danger); font-size: .85rem; }
 .form-error:empty { display: none; }
 .form-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: auto; padding-top: 20px; }

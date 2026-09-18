@@ -80,7 +80,7 @@ internal sealed class MainWindow : Window
         [("Due date", ItemSort.DueDate, false), ("Newest", ItemSort.CreatedAt, true), ("Title", ItemSort.Title, false), ("Status", ItemSort.Status, false)];
 
     private readonly WorkItemsClient _client = new();
-    private readonly ListBox _items = new() { Background = Brushes.Transparent, ItemTemplate = new FuncDataTemplate<WorkItem>((item, _) => ItemCard(item)) };
+    private readonly ListBox _items = new() { Background = Brushes.Transparent };
     private readonly TextBox _search = new() { PlaceholderText = "Search items…  (⌘F)" };
     private readonly ToggleButton[] _filters = new[] { "All" }.Concat(StatusLabels).Select(label => new ToggleButton { Content = label }).ToArray();
     private readonly ComboBox _sort = new() { ItemsSource = SortOptions.Select(option => option.Label).ToArray(), SelectedIndex = 0, MinWidth = 130 };
@@ -92,6 +92,9 @@ internal sealed class MainWindow : Window
     private readonly TextBox _title = new() { PlaceholderText = "What needs to be done?", MaxLength = 200 };
     private readonly TextBlock _titleError = new() { Text = "Title is required.", FontSize = 12, IsVisible = false };
     private readonly TextBox _description = new() { PlaceholderText = "Add some context", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 110 };
+    private readonly TextBox _tags = new() { PlaceholderText = "Comma-separated, e.g. learning, ef-core" };
+    private readonly Button _tagFilterChip = new() { IsVisible = false, CornerRadius = new CornerRadius(99), Padding = new Thickness(12, 4), FontSize = 13, Classes = { "accent" } };
+    private string? _tagFilter;
     private readonly ComboBox _status = new() { ItemsSource = StatusLabels, SelectedIndex = 0, HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly CalendarDatePicker _dueDate = new()
     {
@@ -137,6 +140,7 @@ internal sealed class MainWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Themed(this, BackgroundProperty, "Canvas");
         Themed(this, ForegroundProperty, "Ink");
+        _items.ItemTemplate = new FuncDataTemplate<WorkItem>((item, _) => ItemCard(item));
 
         var panels = new Grid
         {
@@ -180,6 +184,7 @@ internal sealed class MainWindow : Window
         _emptyCreate.Click += (_, _) => NewItem();
         _cancel.Click += (_, _) => NewItem();
         _retry.Click += async (_, _) => await RefreshAsync();
+        _tagFilterChip.Click += async (_, _) => await FilterByTagAsync(null);
         _conflictReload.Click += async (_, _) => await ResolveConflictAsync(overwrite: false);
         _conflictOverwrite.Click += async (_, _) => await ResolveConflictAsync(overwrite: true);
         _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); _toast.IsVisible = false; };
@@ -300,6 +305,8 @@ internal sealed class MainWindow : Window
             chip.FontSize = 13;
             filters.Children.Add(chip);
         }
+        _tagFilterChip.SetValue(ToolTip.TipProperty, "Clear tag filter");
+        filters.Children.Add(_tagFilterChip);
 
         Themed(_emptyText, TextBlock.ForegroundProperty, "Muted");
         _empty.Children.Add(_emptyText);
@@ -343,7 +350,7 @@ internal sealed class MainWindow : Window
         var fields = new StackPanel
         {
             Spacing = 16,
-            Children = { _conflict, titleField, Field("Description", _description, optional: true), row, _message }
+            Children = { _conflict, titleField, Field("Description", _description, optional: true), row, Field("Tags", _tags, optional: true), _message }
         };
         Themed(_conflict, Border.BackgroundProperty, "DangerSoft");
         _conflict.Child = new StackPanel
@@ -416,7 +423,7 @@ internal sealed class MainWindow : Window
         return new StackPanel { Spacing = 6, Children = { text, input } };
     }
 
-    private static Control ItemCard(WorkItem? item)
+    private Control ItemCard(WorkItem? item)
     {
         if (item is null) return new TextBlock();
         var done = item.Status == WorkItemStatus.Done;
@@ -462,11 +469,36 @@ internal sealed class MainWindow : Window
             }, TextBlock.ForegroundProperty, "Muted"));
         meta.Margin = new Thickness(0, 5, 0, 0);
         content.Children.Add(meta);
+        if (item.Tags is { Count: > 0 } tags)
+        {
+            var chips = new WrapPanel { ItemSpacing = 4, LineSpacing = 4, Margin = new Thickness(0, 4, 0, 0) };
+            foreach (var tag in tags)
+            {
+                // A button inside the list item: clicking it filters instead of selecting the item.
+                var chip = Themed(new Button
+                {
+                    Content = "#" + tag, FontSize = 11, Padding = new Thickness(7, 1), CornerRadius = new CornerRadius(99),
+                    Background = Brushes.Transparent, BorderThickness = new Thickness(0)
+                }, ForegroundProperty, "Accent");
+                chip.SetValue(ToolTip.TipProperty, $"Show items tagged {tag}");
+                chip.Click += async (_, _) => await FilterByTagAsync(tag);
+                chips.Children.Add(chip);
+            }
+            content.Children.Add(chips);
+        }
         return content;
     }
 
     private static bool IsOverdue(WorkItem item) =>
         item.Status != WorkItemStatus.Done && item.DueDate is { } due && due.UtcDateTime.Date < DateTime.Today;
+
+    private async Task FilterByTagAsync(string? tag)
+    {
+        _tagFilter = tag;
+        _tagFilterChip.Content = $"#{tag}  ✕";
+        _tagFilterChip.IsVisible = tag is not null;
+        await RefreshAsync();
+    }
 
     private void ApplyFilterChips()
     {
@@ -481,7 +513,7 @@ internal sealed class MainWindow : Window
         _items.SelectedItem = _loaded.FirstOrDefault(item => item.Id == _selected?.Id);
         _syncingList = false;
 
-        var filtered = _filter >= 0 || !string.IsNullOrWhiteSpace(_search.Text);
+        var filtered = _filter >= 0 || _tagFilter is not null || !string.IsNullOrWhiteSpace(_search.Text);
         _count.Text = _total == 1 ? "1 item" : $"{_total} items";
         _loadMore.IsVisible = _loaded.Count < _total;
         _empty.IsVisible = _loaded.Count == 0 && !_banner.IsVisible;
@@ -496,6 +528,7 @@ internal sealed class MainWindow : Window
         _description.Text = item?.Description ?? "";
         _status.SelectedIndex = (int)(item?.Status ?? WorkItemStatus.Todo);
         _dueDate.SelectedDate = item?.DueDate?.UtcDateTime.Date;
+        _tags.Text = string.Join(", ", item?.Tags ?? []);
         _editorHeading.Text = item is null ? "New item" : "Edit item";
         _save.Content = item is null ? "Add item" : "Save changes";
         _cancel.IsVisible = item is not null;
@@ -545,7 +578,7 @@ internal sealed class MainWindow : Window
     {
         var requestId = ++_requestId;
         var (_, sort, desc) = SortOptions[Math.Max(_sort.SelectedIndex, 0)];
-        var query = new ItemQuery(_filter < 0 ? null : (WorkItemStatus)_filter, _search.Text, sort, desc, page);
+        var query = new ItemQuery(_filter < 0 ? null : (WorkItemStatus)_filter, _search.Text, _tagFilter, sort, desc, page);
         SetBusy(true);
         try
         {
@@ -585,7 +618,8 @@ internal sealed class MainWindow : Window
             ? new DateTimeOffset(DateTime.SpecifyKind(date.Date, DateTimeKind.Unspecified), TimeSpan.Zero)
             : null;
         var input = new WorkItemInput(title, string.IsNullOrWhiteSpace(_description.Text) ? null : _description.Text.Trim(),
-            (WorkItemStatus)_status.SelectedIndex, due);
+            (WorkItemStatus)_status.SelectedIndex, due,
+            (_tags.Text ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries));
         var editing = _selected;
 
         SetBusy(true);

@@ -22,6 +22,7 @@ internal sealed class WorkItemsClient : IDisposable
         var url = $"workitems/?sort={query.Sort}&desc={query.Desc}&page={query.Page}&pageSize={query.PageSize}";
         if (query.Status is { } status) url += $"&status={status}";
         if (!string.IsNullOrWhiteSpace(query.Search)) url += $"&search={Uri.EscapeDataString(query.Search.Trim())}";
+        if (!string.IsNullOrWhiteSpace(query.Tag)) url += $"&tag={Uri.EscapeDataString(query.Tag)}";
         return await _http.GetFromJsonAsync<ItemPage>(url, JsonOptions)
             ?? throw new InvalidOperationException("API returned an empty response.");
     }
