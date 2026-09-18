@@ -45,14 +45,15 @@ items.MapGet("/", async ([AsParameters] WorkItemQuery query, WorkItemsDb db) =>
         page.Select(WorkItemResponse.From).ToList(), total, query.Page, query.PageSize));
 }).Produces<PagedResponse<WorkItemResponse>>(200).Produces(400);
 
-items.MapGet("/{id:int}", async (int id, WorkItemsDb db) =>
-    await db.WorkItems.AsNoTracking().Where(item => item.Id == id)
-        .Select(item => new WorkItemResponse(item.Id, item.Title, item.Description,
-            item.Status, item.DueDate, item.CreatedAt)).SingleOrDefaultAsync() is { } item
-        ? Results.Ok(item) : Results.NotFound())
-    .Produces<WorkItemResponse>(200).Produces(404);
+items.MapGet("/{id:int}", async (int id, WorkItemsDb db, HttpResponse response) =>
+{
+    var item = await db.WorkItems.AsNoTracking().SingleOrDefaultAsync(item => item.Id == id);
+    if (item is null) return Results.NotFound();
+    response.Headers.ETag = ETag(item.Version);
+    return Results.Ok(WorkItemResponse.From(item));
+}).Produces<WorkItemResponse>(200).Produces(404);
 
-items.MapPost("/", async (WorkItemInput input, WorkItemsDb db) =>
+items.MapPost("/", async (WorkItemInput input, WorkItemsDb db, HttpResponse response) =>
 {
     if (Validate(input) is { } error) return Results.ValidationProblem(error);
     var item = new WorkItem
@@ -62,30 +63,45 @@ items.MapPost("/", async (WorkItemInput input, WorkItemsDb db) =>
     };
     db.WorkItems.Add(item);
     await db.SaveChangesAsync();
+    response.Headers.ETag = ETag(item.Version);
     return Results.Created($"/workitems/{item.Id}", WorkItemResponse.From(item));
 }).Produces<WorkItemResponse>(201).Produces(400);
 
-items.MapPut("/{id:int}", async (int id, WorkItemInput input, WorkItemsDb db) =>
+// PUT and DELETE require If-Match with the version the client last saw, so a stale client
+// cannot silently overwrite someone else's change (lost update).
+items.MapPut("/{id:int}", async (int id, WorkItemInput input, WorkItemsDb db, HttpRequest request, HttpResponse response) =>
 {
     if (Validate(input) is { } error) return Results.ValidationProblem(error);
+    if (IfMatchVersion(request) is not { } expected) return IfMatchRequired();
     var item = await db.WorkItems.FindAsync(id);
     if (item is null) return Results.NotFound();
+
+    // Compare against the client's version, not the one just read: the check happens in the
+    // UPDATE's WHERE clause, so a write that lands between our read and SaveChanges is still caught.
+    db.Entry(item).Property(value => value.Version).OriginalValue = expected;
     item.Title = input.Title.Trim();
     item.Description = input.Description;
     item.Status = input.Status;
     item.DueDate = input.DueDate?.ToUniversalTime();
-    await db.SaveChangesAsync();
-    return Results.Ok(WorkItemResponse.From(item));
-}).Produces<WorkItemResponse>(200).Produces(400).Produces(404);
+    item.Version = expected + 1;
+    try { await db.SaveChangesAsync(); }
+    catch (DbUpdateConcurrencyException) { return VersionConflict(); }
 
-items.MapDelete("/{id:int}", async (int id, WorkItemsDb db) =>
+    response.Headers.ETag = ETag(item.Version);
+    return Results.Ok(WorkItemResponse.From(item));
+}).Produces<WorkItemResponse>(200).Produces(400).Produces(404).Produces(412).Produces(428);
+
+items.MapDelete("/{id:int}", async (int id, WorkItemsDb db, HttpRequest request) =>
 {
+    if (IfMatchVersion(request) is not { } expected) return IfMatchRequired();
     var item = await db.WorkItems.FindAsync(id);
     if (item is null) return Results.NotFound();
+    db.Entry(item).Property(value => value.Version).OriginalValue = expected;
     db.WorkItems.Remove(item);
-    await db.SaveChangesAsync();
+    try { await db.SaveChangesAsync(); }
+    catch (DbUpdateConcurrencyException) { return VersionConflict(); }
     return Results.NoContent();
-}).Produces(204).Produces(404);
+}).Produces(204).Produces(404).Produces(412).Produces(428);
 
 app.Run();
 
@@ -100,6 +116,18 @@ static Dictionary<string, string[]>? Validate(WorkItemInput input)
         return new() { ["status"] = ["Status is invalid."] };
     return null;
 }
+
+static string ETag(int version) => $"\"{version}\"";
+
+// Accepts If-Match: "3" (or W/"3"); returns null when missing or not a version number.
+static int? IfMatchVersion(HttpRequest request) =>
+    int.TryParse(request.Headers.IfMatch.ToString().Replace("W/", "").Trim('"'), out var version) ? version : null;
+
+static IResult IfMatchRequired() => Results.Problem(statusCode: StatusCodes.Status428PreconditionRequired,
+    title: "If-Match header required", detail: "Send If-Match with the item's current ETag (its version).");
+
+static IResult VersionConflict() => Results.Problem(statusCode: StatusCodes.Status412PreconditionFailed,
+    title: "Item was changed elsewhere", detail: "Reload the item, or retry with its current version to overwrite.");
 
 static Dictionary<string, string[]>? ValidateQuery(WorkItemQuery query)
 {

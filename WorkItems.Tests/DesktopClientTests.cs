@@ -20,12 +20,17 @@ public sealed class DesktopClientTests
         Assert.Equal("Desktop item", created.Title);
         Assert.Equal("29-02-2028", WorkItem.FormatDate(created.DueDate!.Value));
 
-        await client.SaveAsync(created.Id,
+        var updated = await client.SaveAsync(created,
             new WorkItemInput("Updated item", "Done", WorkItemStatus.Done, null));
+        Assert.Equal(created.Version + 1, updated.Version);
+        // Saving again from the stale copy is a conflict, not a silent overwrite.
+        await Assert.ThrowsAsync<VersionConflictException>(() =>
+            client.SaveAsync(created, new WorkItemInput("Stale", null, WorkItemStatus.Todo, null)));
         var found = await client.GetItemsAsync(new ItemQuery(Status: WorkItemStatus.Done, Search: "updated"));
         Assert.Equal(WorkItemStatus.Done, Assert.Single(found.Items).Status);
 
-        await client.DeleteAsync(created.Id);
+        await Assert.ThrowsAsync<VersionConflictException>(() => client.DeleteAsync(created));
+        await client.DeleteAsync(await client.GetItemAsync(created.Id));
         Assert.Equal(0, (await client.GetItemsAsync()).Total);
     }
 }

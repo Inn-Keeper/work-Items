@@ -42,6 +42,18 @@ internal sealed class MainWindow : Window
         ["SystemControlHighlightListAccentLowBrush"] = ("#EEF2FF", "#232C45"),
         ["SystemControlHighlightListAccentMediumBrush"] = ("#E4EAFF", "#2A3452"),
         ["SystemControlHighlightListAccentHighBrush"] = ("#DAE2FF", "#303B5C"),
+        // Form fields sit just above the card surface instead of Fluent's near-black dark default.
+        ["TextControlBackground"] = ("#FFFFFF", "#1E2431"), ["TextControlBackgroundPointerOver"] = ("#F6F8FC", "#232A38"),
+        ["TextControlBackgroundFocused"] = ("#FFFFFF", "#232A38"), ["TextControlBorderBrush"] = ("#CDD5E2", "#333B4C"),
+        ["TextControlBorderBrushPointerOver"] = ("#B8C2D3", "#434C5F"), ["TextControlBorderBrushFocused"] = ("#405BD8", "#6D84F0"),
+        ["ComboBoxBackground"] = ("#FFFFFF", "#1E2431"), ["ComboBoxBackgroundPointerOver"] = ("#F6F8FC", "#232A38"),
+        ["ComboBoxBackgroundPressed"] = ("#EEF2FF", "#2A3141"), ["ComboBoxBackgroundUnfocused"] = ("#FFFFFF", "#1E2431"),
+        ["ComboBoxBorderBrush"] = ("#CDD5E2", "#333B4C"), ["ComboBoxBorderBrushPointerOver"] = ("#B8C2D3", "#434C5F"),
+        ["ComboBoxBorderBrushPressed"] = ("#405BD8", "#6D84F0"), ["ComboBoxDropDownBackground"] = ("#FFFFFF", "#1E2431"),
+        ["CalendarDatePickerBackground"] = ("#FFFFFF", "#1E2431"), ["CalendarDatePickerBackgroundPointerOver"] = ("#F6F8FC", "#232A38"),
+        ["CalendarDatePickerBackgroundFocused"] = ("#FFFFFF", "#232A38"), ["CalendarDatePickerBackgroundPressed"] = ("#EEF2FF", "#2A3141"),
+        ["CalendarDatePickerBorderBrush"] = ("#CDD5E2", "#333B4C"), ["CalendarDatePickerBorderBrushPointerOver"] = ("#B8C2D3", "#434C5F"),
+        ["CalendarDatePickerBorderBrushPressed"] = ("#405BD8", "#6D84F0"),
         // Toggle buttons are only used as filter chips: outlined, accent-tinted when checked.
         ["ToggleButtonBackground"] = ("#00FFFFFF", "#00000000"),
         ["ToggleButtonBackgroundPointerOver"] = ("#F6F8FC", "#1D2330"),
@@ -94,6 +106,10 @@ internal sealed class MainWindow : Window
     private readonly Button _delete = new() { Content = "Delete", Classes = { "danger-text" }, IsVisible = false };
     private readonly Button _retry = new() { Content = "Retry" };
     private readonly TextBlock _message = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly Border _conflict = new() { IsVisible = false, CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 10) };
+    private readonly Button _conflictReload = new() { Content = "Reload" };
+    private readonly Button _conflictOverwrite = new() { Content = "Overwrite", Classes = { "danger" } };
+    private bool _conflictOnDelete;
     private readonly TextBlock _count = new();
     private readonly TextBlock _editorHeading = new() { Text = "New item", FontSize = 19, FontWeight = FontWeight.SemiBold };
     private readonly Border _banner = new() { IsVisible = false, CornerRadius = new CornerRadius(10), Padding = new Thickness(14, 8) };
@@ -164,6 +180,8 @@ internal sealed class MainWindow : Window
         _emptyCreate.Click += (_, _) => NewItem();
         _cancel.Click += (_, _) => NewItem();
         _retry.Click += async (_, _) => await RefreshAsync();
+        _conflictReload.Click += async (_, _) => await ResolveConflictAsync(overwrite: false);
+        _conflictOverwrite.Click += async (_, _) => await ResolveConflictAsync(overwrite: true);
         _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); _toast.IsVisible = false; };
         AddHandler(KeyDownEvent, OnShortcut, RoutingStrategies.Tunnel);
         Opened += async (_, _) => { _title.Focus(); await RefreshAsync(); };
@@ -325,7 +343,21 @@ internal sealed class MainWindow : Window
         var fields = new StackPanel
         {
             Spacing = 16,
-            Children = { titleField, Field("Description", _description, optional: true), row, _message }
+            Children = { _conflict, titleField, Field("Description", _description, optional: true), row, _message }
+        };
+        Themed(_conflict, Border.BackgroundProperty, "DangerSoft");
+        _conflict.Child = new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                Themed(new TextBlock
+                {
+                    Text = "This item was changed elsewhere. Reload to see the latest version, or overwrite it with yours.",
+                    TextWrapping = TextWrapping.Wrap
+                }, TextBlock.ForegroundProperty, "Danger"),
+                new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { _conflictReload, _conflictOverwrite } }
+            }
         };
 
         var hint = Themed(new TextBlock
@@ -469,6 +501,7 @@ internal sealed class MainWindow : Window
         _cancel.IsVisible = item is not null;
         _delete.IsVisible = item is not null;
         _titleError.IsVisible = false;
+        _conflict.IsVisible = false;
         _message.Text = "";
         if (item is null)
         {
@@ -559,10 +592,11 @@ internal sealed class MainWindow : Window
         try
         {
             // Keep editing the saved item even if the current filter or page hides it.
-            Edit(await _client.SaveAsync(editing?.Id, input));
+            Edit(await _client.SaveAsync(editing, input));
             await RefreshAsync();
             ShowToast(editing is null ? "Item added" : "Changes saved");
         }
+        catch (VersionConflictException) { ShowConflict(onDelete: false); }
         catch (Exception error) { _message.Text = error.Message; }
         finally { SetBusy(false); }
     }
@@ -571,16 +605,55 @@ internal sealed class MainWindow : Window
     {
         if (_selected is not { } item) return;
         if (!await ConfirmDeleteAsync(item.Title)) return;
+        await DeleteSelectedAsync();
+    }
+
+    private async Task DeleteSelectedAsync()
+    {
+        if (_selected is not { } item) return;
         SetBusy(true);
         try
         {
-            await _client.DeleteAsync(item.Id);
+            await _client.DeleteAsync(item);
             Edit(null);
             await RefreshAsync();
             ShowToast("Item deleted");
         }
+        catch (VersionConflictException) { ShowConflict(onDelete: true); }
         catch (Exception error) { _message.Text = error.Message; }
         finally { SetBusy(false); }
+    }
+
+    private void ShowConflict(bool onDelete)
+    {
+        _conflictOnDelete = onDelete;
+        _conflictOverwrite.Content = onDelete ? "Delete anyway" : "Overwrite";
+        _conflict.IsVisible = true;
+    }
+
+    // Both options start from the server's latest version. Overwrite keeps the form as typed and
+    // retries against that version; Reload discards the form and shows the latest.
+    private async Task ResolveConflictAsync(bool overwrite)
+    {
+        if (_selected is not { } item) return;
+        WorkItem latest;
+        try { latest = await _client.GetItemAsync(item.Id); }
+        catch (Exception error)
+        {
+            _conflict.IsVisible = false;
+            _message.Text = error.Message;
+            return;
+        }
+
+        if (!overwrite)
+        {
+            Edit(latest);
+            await RefreshAsync();
+            return;
+        }
+        _selected = latest;
+        _conflict.IsVisible = false;
+        await (_conflictOnDelete ? DeleteSelectedAsync() : SaveAsync());
     }
 
     private async Task<bool> ConfirmDeleteAsync(string title)
@@ -628,6 +701,8 @@ internal sealed class MainWindow : Window
         _new.IsEnabled = !busy;
         _delete.IsEnabled = !busy;
         _retry.IsEnabled = !busy;
+        _conflictReload.IsEnabled = !busy;
+        _conflictOverwrite.IsEnabled = !busy;
         _loadMore.IsEnabled = !busy;
     }
 }

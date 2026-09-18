@@ -57,6 +57,11 @@
         <h2 id="form-heading">New item</h2>
         <button id="delete-button" type="button" class="danger small" hidden>Delete</button>
       </div>
+      <div id="conflict" class="conflict" role="alert" hidden>
+        <p>This item was changed elsewhere. Reload to see the latest version, or overwrite it with yours.</p>
+        <button id="conflict-reload" type="button" class="secondary small">Reload</button>
+        <button id="conflict-overwrite" type="button" class="danger-solid small">Overwrite</button>
+      </div>
       <form id="item-form" novalidate>
         <label for="title">Title</label>
         <input id="title" name="title" maxlength="200" required placeholder="What needs to be done?" aria-describedby="title-error">

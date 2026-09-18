@@ -29,13 +29,18 @@ public sealed class CrudTests
         var read = await client.GetFromJsonAsync<WorkItemResponse>($"/workitems/{created.Id}");
         Assert.Equal("Learn C#", read!.Title);
 
-        var update = await client.PutAsJsonAsync($"/workitems/{created.Id}",
-            new WorkItemInput("Learn EF Core", "Updated", WorkItemStatus.Done, null));
+        var put = new HttpRequestMessage(HttpMethod.Put, $"/workitems/{created.Id}")
+        {
+            Content = JsonContent.Create(new WorkItemInput("Learn EF Core", "Updated", WorkItemStatus.Done, null))
+        };
+        put.Headers.TryAddWithoutValidation("If-Match", $"\"{created.Version}\"");
+        var update = await client.SendAsync(put);
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
         var updated = await update.Content.ReadFromJsonAsync<WorkItemResponse>();
         Assert.Equal(WorkItemStatus.Done, updated!.Status);
         Assert.Equal(created.CreatedAt, updated.CreatedAt);
 
+        client.DefaultRequestHeaders.TryAddWithoutValidation("If-Match", $"\"{updated.Version}\"");
         var delete = await client.DeleteAsync($"/workitems/{created.Id}");
         Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,

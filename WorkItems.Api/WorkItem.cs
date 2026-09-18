@@ -13,6 +13,8 @@ public sealed class WorkItem
     public WorkItemStatus Status { get; set; }
     public DateTimeOffset? DueDate { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    // Optimistic concurrency: EF adds "AND Version = @original" to UPDATE/DELETE and throws if no row matched.
+    [ConcurrencyCheck] public int Version { get; set; }
 }
 
 // Only editable fields come from the client; Id and CreatedAt are server-owned.
@@ -24,10 +26,10 @@ public sealed record WorkItemInput(
 
 public sealed record WorkItemResponse(
     int Id, string Title, string? Description, WorkItemStatus Status,
-    DateTimeOffset? DueDate, DateTimeOffset CreatedAt)
+    DateTimeOffset? DueDate, DateTimeOffset CreatedAt, int Version)
 {
     public static WorkItemResponse From(WorkItem item) =>
-        new(item.Id, item.Title, item.Description, item.Status, item.DueDate, item.CreatedAt);
+        new(item.Id, item.Title, item.Description, item.Status, item.DueDate, item.CreatedAt, item.Version);
 }
 
 public enum WorkItemSort { DueDate, CreatedAt, Title, Status }

@@ -200,6 +200,11 @@ label span { color: var(--muted); font-weight: 400; }
 .form-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: auto; padding-top: 20px; }
 .hint { margin-left: auto; font-size: .8rem; }
 
+.conflict { margin-bottom: 14px; padding: 12px 14px; border-radius: 10px; color: var(--danger); background: var(--danger-soft); }
+.conflict[hidden] { display: none; }
+.conflict p { margin: 0 0 10px; }
+.conflict button + button { margin-left: 6px; }
+
 /* Toast */
 .toast {
   position: fixed;

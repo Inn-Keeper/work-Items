@@ -6,7 +6,7 @@ internal enum WorkItemStatus { Todo, InProgress, Done }
 
 internal sealed record WorkItem(
     int Id, string Title, string? Description, WorkItemStatus Status,
-    DateTimeOffset? DueDate, DateTimeOffset CreatedAt)
+    DateTimeOffset? DueDate, DateTimeOffset CreatedAt, int Version)
 {
     public override string ToString() =>
         $"{StatusLabel(Status),-12}  {Title}" +

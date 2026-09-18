@@ -51,7 +51,12 @@ curl -X POST http://localhost:5000/workitems/ -H 'Content-Type: application/json
 curl 'http://localhost:5000/workitems/?status=todo&search=async&sort=dueDate&page=1&pageSize=20'
 ```
 
-Status values are `0` (Todo), `1` (InProgress), and `2` (Done). Both UIs pick due dates with a date picker and list them as `DD-MM-YYYY`; the API uses ISO timestamps. `PUT /workitems/{id}` replaces the editable fields; `DELETE /workitems/{id}` removes the item.
+Status values are `0` (Todo), `1` (InProgress), and `2` (Done). Both UIs pick due dates with a date picker and list them as `DD-MM-YYYY`; the API uses ISO timestamps. `PUT /workitems/{id}` replaces the editable fields; `DELETE /workitems/{id}` removes the item. Both require `If-Match` with the item's current version (returned as `version` and as the `ETag` header): a missing header returns `428`, a stale one `412`, so a client can't silently overwrite someone else's change. The UIs then offer **Reload** or **Overwrite**.
+
+```sh
+curl -X PUT http://localhost:5000/workitems/1 -H 'If-Match: "0"' -H 'Content-Type: application/json' \
+  -d '{"title":"Practice async/await","status":1}'
+```
 
 `GET /workitems/` returns `{ items, total, page, pageSize }`. Optional query parameters, all case-insensitive:
 `status` (`todo`, `inProgress`, `done`), `search` (title or description), `sort` (`dueDate` — default, undated last — `createdAt`, `title`, `status`), `desc` (`true`/`false`), `page` (from 1), `pageSize` (1–100, default 50). Invalid values return `400` with field errors.

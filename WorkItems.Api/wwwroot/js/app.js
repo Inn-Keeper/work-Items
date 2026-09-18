@@ -1,4 +1,4 @@
-import { getItems, removeItem, saveItem } from './api.js';
+import { VersionConflictError, getItem, getItems, removeItem, saveItem } from './api.js';
 import { fromInputDate, toInputDate } from './date.js';
 import { renderItems } from './render.js';
 
@@ -21,6 +21,8 @@ const dueDateField = $('#due-date');
 const banner = $('#banner');
 const toast = $('#toast');
 const confirmDialog = $('#confirm-dialog');
+const conflict = $('#conflict');
+const conflictOverwrite = $('#conflict-overwrite');
 
 let items = [];      // pages loaded so far
 let total = 0;
@@ -30,6 +32,7 @@ let filter = 'all';
 let requestId = 0;   // ignore responses that arrive after a newer query was sent
 let toastTimer;
 let searchTimer;
+let conflictOnDelete = false;
 
 function showToast(text) {
   toast.textContent = text;
@@ -61,6 +64,7 @@ function fillForm(item) {
   cancelButton.hidden = !item;
   deleteButton.hidden = !item;
   message.textContent = '';
+  conflict.hidden = true;
   setTitleError(false);
   render();
 }
@@ -110,7 +114,7 @@ async function save() {
   saveButton.disabled = true;
   message.textContent = '';
   try {
-    const saved = await saveItem(selected?.id ?? null, {
+    const saved = await saveItem(selected, {
       title,
       description: descriptionField.value.trim() || null,
       status: Number(statusField.value),
@@ -120,8 +124,38 @@ async function save() {
     // Keep editing the saved item even if the current filter or page hides it.
     fillForm(saved);
     await loadItems();
-  } catch (error) { message.textContent = error.message; }
+  } catch (error) { handleError(error, false); }
   finally { saveButton.disabled = false; }
+}
+
+function handleError(error, onDelete) {
+  if (!(error instanceof VersionConflictError)) {
+    message.textContent = error.message;
+    return;
+  }
+  conflictOnDelete = onDelete;
+  conflictOverwrite.textContent = onDelete ? 'Delete anyway' : 'Overwrite';
+  conflict.hidden = false;
+}
+
+// Both options start from the server's latest version. Overwrite keeps the form as typed and
+// retries against that version; Reload discards the form and shows the latest.
+async function resolveConflict(overwrite) {
+  let latest;
+  try { latest = await getItem(selected.id); }
+  catch (error) {
+    conflict.hidden = true;
+    message.textContent = error.message;
+    return;
+  }
+  if (!overwrite) {
+    fillForm(latest);
+    await loadItems();
+    return;
+  }
+  selected = latest;
+  conflict.hidden = true;
+  await (conflictOnDelete ? removeSelected() : save());
 }
 
 async function deleteSelected() {
@@ -131,19 +165,24 @@ async function deleteSelected() {
   const choice = await new Promise((resolve) =>
     confirmDialog.addEventListener('close', () => resolve(confirmDialog.returnValue), { once: true }));
   if (choice !== 'delete') return;
+  await removeSelected();
+}
 
+async function removeSelected() {
   try {
-    await removeItem(selected.id);
+    await removeItem(selected);
     fillForm(null);
     showToast('Item deleted');
     await loadItems();
-  } catch (error) { message.textContent = error.message; }
+  } catch (error) { handleError(error, true); }
 }
 
 form.addEventListener('submit', (event) => { event.preventDefault(); save(); });
 titleField.addEventListener('input', () => { if (titleField.value.trim()) setTitleError(false); });
 cancelButton.addEventListener('click', () => fillForm(null));
 deleteButton.addEventListener('click', deleteSelected);
+$('#conflict-reload').addEventListener('click', () => resolveConflict(false));
+conflictOverwrite.addEventListener('click', () => resolveConflict(true));
 $('#new-button').addEventListener('click', newItem);
 $('#retry-button').addEventListener('click', () => loadItems());
 loadMoreButton.addEventListener('click', () => loadItems(page + 1));
