@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using WorkItems.Contracts;
 
 namespace WorkItems.Desktop;
 
@@ -16,28 +17,23 @@ internal sealed class WorkItemsClient : IDisposable
 
     internal WorkItemsClient(HttpClient http) => _http = http;
 
-    public async Task<ItemPage> GetItemsAsync(ItemQuery? query = null)
+    public async Task<PagedResponse<WorkItemResponse>> GetItemsAsync(WorkItemListQuery? query = null)
     {
-        query ??= new ItemQuery();
-        var url = $"workitems/?sort={query.Sort}&desc={query.Desc}&page={query.Page}&pageSize={query.PageSize}";
-        if (query.Status is { } status) url += $"&status={status}";
-        if (!string.IsNullOrWhiteSpace(query.Search)) url += $"&search={Uri.EscapeDataString(query.Search.Trim())}";
-        if (!string.IsNullOrWhiteSpace(query.Tag)) url += $"&tag={Uri.EscapeDataString(query.Tag)}";
-        using var response = await _http.GetAsync(url);
+        using var response = await _http.GetAsync("workitems/?" + (query ?? new()).ToQueryString());
         await CheckResponseAsync(response);
-        return await response.Content.ReadFromJsonAsync<ItemPage>(JsonOptions)
+        return await response.Content.ReadFromJsonAsync<PagedResponse<WorkItemResponse>>(JsonOptions)
             ?? throw new InvalidOperationException("API returned an empty response.");
     }
 
-    public async Task<WorkItem> GetItemAsync(int id)
+    public async Task<WorkItemResponse> GetItemAsync(int id)
     {
         using var response = await _http.GetAsync($"workitems/{id}");
         await CheckResponseAsync(response);
-        return (await response.Content.ReadFromJsonAsync<WorkItem>(JsonOptions))!;
+        return (await response.Content.ReadFromJsonAsync<WorkItemResponse>(JsonOptions))!;
     }
 
     /// <summary>Creates when <paramref name="existing"/> is null, otherwise updates it if its version is still current.</summary>
-    public async Task<WorkItem> SaveAsync(WorkItem? existing, WorkItemInput input)
+    public async Task<WorkItemResponse> SaveAsync(WorkItemResponse? existing, WorkItemInput input)
     {
         using var request = existing is null
             ? new HttpRequestMessage(HttpMethod.Post, "workitems/")
@@ -45,10 +41,10 @@ internal sealed class WorkItemsClient : IDisposable
         request.Content = JsonContent.Create(input, options: JsonOptions);
         using var response = await _http.SendAsync(request);
         await CheckResponseAsync(response);
-        return (await response.Content.ReadFromJsonAsync<WorkItem>(JsonOptions))!;
+        return (await response.Content.ReadFromJsonAsync<WorkItemResponse>(JsonOptions))!;
     }
 
-    public async Task DeleteAsync(WorkItem item)
+    public async Task DeleteAsync(WorkItemResponse item)
     {
         using var request = IfMatch(new HttpRequestMessage(HttpMethod.Delete, $"workitems/{item.Id}"), item.Version);
         using var response = await _http.SendAsync(request);

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using WorkItems.Api;
+using WorkItems.Contracts;
 using Xunit;
 
 namespace WorkItems.Tests;
@@ -72,8 +73,8 @@ public sealed class TagTests : IDisposable
     [Fact]
     public async Task InvalidTagsAreRejected()
     {
-        var tooMany = Enumerable.Range(0, WorkItemInput.MaxTags + 1).Select(i => $"t{i}").ToArray();
-        foreach (var tags in new[] { tooMany, [new string('x', Tag.MaxLength + 1)] })
+        var tooMany = Enumerable.Range(0, WorkItemLimits.MaxTags + 1).Select(i => $"t{i}").ToArray();
+        foreach (var tags in new[] { tooMany, [new string('x', WorkItemLimits.TagMaxLength + 1)] })
         {
             var response = await _client.PostAsJsonAsync("/workitems/", new WorkItemInput("Bad", null, WorkItemStatus.Todo, null, tags));
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);

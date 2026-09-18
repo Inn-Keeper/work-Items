@@ -1,4 +1,5 @@
 using WorkItems.Desktop;
+using WorkItems.Contracts;
 using Xunit;
 
 namespace WorkItems.Tests;
@@ -16,7 +17,7 @@ public sealed class DesktopClientTests
         var created = await client.SaveAsync(null, new WorkItemInput("Desktop item", null, WorkItemStatus.Todo, dueDate));
         Assert.Equal(created.Id, Assert.Single((await client.GetItemsAsync()).Items).Id);
         Assert.Equal("Desktop item", created.Title);
-        Assert.Equal("29-02-2028", WorkItem.FormatDate(created.DueDate!.Value));
+        Assert.Equal("29-02-2028", Display.FormatDate(created.DueDate!.Value));
 
         var updated = await client.SaveAsync(created,
             new WorkItemInput("Updated item", "Done", WorkItemStatus.Done, null));
@@ -24,7 +25,7 @@ public sealed class DesktopClientTests
         // Saving again from the stale copy is a conflict, not a silent overwrite.
         await Assert.ThrowsAsync<VersionConflictException>(() =>
             client.SaveAsync(created, new WorkItemInput("Stale", null, WorkItemStatus.Todo, null)));
-        var found = await client.GetItemsAsync(new ItemQuery(Status: WorkItemStatus.Done, Search: "updated"));
+        var found = await client.GetItemsAsync(new WorkItemListQuery(Status: WorkItemStatus.Done, Search: "updated"));
         Assert.Equal(WorkItemStatus.Done, Assert.Single(found.Items).Status);
 
         await Assert.ThrowsAsync<VersionConflictException>(() => client.DeleteAsync(created));

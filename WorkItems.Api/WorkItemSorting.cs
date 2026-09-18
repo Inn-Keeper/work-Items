@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
+using WorkItems.Contracts;
 
 namespace WorkItems.Api;
 

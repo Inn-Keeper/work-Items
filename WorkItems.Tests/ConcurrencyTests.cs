@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using WorkItems.Api;
+using WorkItems.Contracts;
 using Xunit;
 
 namespace WorkItems.Tests;

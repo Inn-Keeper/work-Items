@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using WorkItems.Contracts;
 
 namespace WorkItems.Api;
 
@@ -40,14 +41,14 @@ public static class WorkItemEndpoints
         var total = await filtered.CountAsync(ct);
         var page = await filtered.SortBy(query.ParsedSort, query.Desc).ThenBy(item => item.Id)
             .Skip((query.Page - 1) * query.PageSize).Take(query.PageSize)
-            .Select(WorkItemResponse.Projection)
+            .Select(WorkItemMapping.ToResponse)
             .ToListAsync(ct);
         return Results.Ok(new PagedResponse<WorkItemResponse>(page, total, query.Page, query.PageSize));
     }
 
     private static async Task<IResult> Get(int id, WorkItemsDb db, HttpResponse response, CancellationToken ct)
     {
-        var item = await db.WorkItems.Where(item => item.Id == id).Select(WorkItemResponse.Projection).SingleOrDefaultAsync(ct);
+        var item = await db.WorkItems.Where(item => item.Id == id).Select(WorkItemMapping.ToResponse).SingleOrDefaultAsync(ct);
         if (item is null) return Results.NotFound();
         response.Headers.ETag = Preconditions.ETag(item.Version);
         return Results.Ok(item);
@@ -64,7 +65,7 @@ public static class WorkItemEndpoints
         db.WorkItems.Add(item);
         await db.SaveChangesAsync(ct);
         response.Headers.ETag = Preconditions.ETag(item.Version);
-        return Results.Created($"/workitems/{item.Id}", WorkItemResponse.From(item));
+        return Results.Created($"/workitems/{item.Id}", item.ToResponseFromLoaded());
     }
 
     private static async Task<IResult> Update(
@@ -89,7 +90,7 @@ public static class WorkItemEndpoints
         catch (DbUpdateConcurrencyException) { return Preconditions.VersionConflict(); }
 
         response.Headers.ETag = Preconditions.ETag(item.Version);
-        return Results.Ok(WorkItemResponse.From(item));
+        return Results.Ok(item.ToResponseFromLoaded());
     }
 
     private static async Task<IResult> Delete(int id, WorkItemsDb db, HttpRequest request, CancellationToken ct)

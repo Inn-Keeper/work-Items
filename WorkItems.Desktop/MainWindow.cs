@@ -9,6 +9,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using WorkItems.Contracts;
 
 namespace WorkItems.Desktop;
 
@@ -76,8 +77,8 @@ internal sealed class MainWindow : Window
     };
 
     private static readonly string[] StatusLabels = ["Todo", "In progress", "Done"];
-    private static readonly (string Label, ItemSort Sort, bool Desc)[] SortOptions =
-        [("Due date", ItemSort.DueDate, false), ("Newest", ItemSort.CreatedAt, true), ("Title", ItemSort.Title, false), ("Status", ItemSort.Status, false)];
+    private static readonly (string Label, WorkItemSort Sort, bool Desc)[] SortOptions =
+        [("Due date", WorkItemSort.DueDate, false), ("Newest", WorkItemSort.CreatedAt, true), ("Title", WorkItemSort.Title, false), ("Status", WorkItemSort.Status, false)];
 
     private readonly WorkItemsClient _client = new();
     private readonly ListBox _items = new() { Background = Brushes.Transparent };
@@ -90,10 +91,9 @@ internal sealed class MainWindow : Window
     private readonly StackPanel _empty = new() { Spacing = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
     private readonly TextBlock _emptyText = new() { HorizontalAlignment = HorizontalAlignment.Center };
     private readonly Button _emptyCreate = new() { Content = "Create your first item", HorizontalAlignment = HorizontalAlignment.Center };
-    // Limits mirror WorkItem.TitleMaxLength / DescriptionMaxLength in the API.
-    private readonly TextBox _title = new() { PlaceholderText = "What needs to be done?", MaxLength = 200 };
+    private readonly TextBox _title = new() { PlaceholderText = "What needs to be done?", MaxLength = WorkItemLimits.TitleMaxLength };
     private readonly TextBlock _titleError = new() { Text = "Title is required.", FontSize = 12, IsVisible = false };
-    private readonly TextBox _description = new() { PlaceholderText = "Add some context", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 110, MaxLength = 2000 };
+    private readonly TextBox _description = new() { PlaceholderText = "Add some context", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 110, MaxLength = WorkItemLimits.DescriptionMaxLength };
     private readonly TextBox _tags = new() { PlaceholderText = "Comma-separated, e.g. learning, ef-core" };
     private readonly Button _tagFilterChip = new() { IsVisible = false, CornerRadius = new CornerRadius(99), Padding = new Thickness(12, 4), FontSize = 13, Classes = { "accent" } };
     private string? _tagFilter;
@@ -123,11 +123,11 @@ internal sealed class MainWindow : Window
     private readonly TextBlock _toastText = new() { FontWeight = FontWeight.SemiBold };
     private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(2.2) };
 
-    private readonly List<WorkItem> _loaded = [];
+    private readonly List<WorkItemResponse> _loaded = [];
     private int _total;
     private int _page;
     private int _requestId; // Ignore responses that arrive after a newer query was sent.
-    private WorkItem? _selected;
+    private WorkItemResponse? _selected;
     private WorkItemStatus? _statusFilter;
     private bool _syncingList;
     private int _busyCount; // A counter, not a bool: a list load finishing must not re-enable Save mid-save.
@@ -143,7 +143,7 @@ internal sealed class MainWindow : Window
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Themed(this, BackgroundProperty, "Canvas");
         Themed(this, ForegroundProperty, "Ink");
-        _items.ItemTemplate = new FuncDataTemplate<WorkItem>((item, _) => ItemCard(item));
+        _items.ItemTemplate = new FuncDataTemplate<WorkItemResponse>((item, _) => ItemCard(item));
 
         var panels = new Grid
         {
@@ -169,7 +169,7 @@ internal sealed class MainWindow : Window
 
         _items.SelectionChanged += (_, _) =>
         {
-            if (!_syncingList && _items.SelectedItem is WorkItem item) Edit(item);
+            if (!_syncingList && _items.SelectedItem is WorkItemResponse item) Edit(item);
         };
         _search.TextChanged += (_, _) => { _searchDelay.Stop(); _searchDelay.Start(); };
         _searchDelay.Tick += async (_, _) => { _searchDelay.Stop(); await RefreshAsync(); };
@@ -426,7 +426,7 @@ internal sealed class MainWindow : Window
         return new StackPanel { Spacing = 6, Children = { text, input } };
     }
 
-    private Control ItemCard(WorkItem? item)
+    private Control ItemCard(WorkItemResponse? item)
     {
         if (item is null) return new TextBlock();
         var done = item.Status == WorkItemStatus.Done;
@@ -440,7 +440,7 @@ internal sealed class MainWindow : Window
         {
             CornerRadius = new CornerRadius(99),
             Padding = new Thickness(8, 2),
-            Child = Themed(new TextBlock { Text = WorkItem.StatusLabel(item.Status), FontSize = 11, FontWeight = FontWeight.SemiBold }, TextBlock.ForegroundProperty, fg)
+            Child = Themed(new TextBlock { Text = Display.StatusLabel(item.Status), FontSize = 11, FontWeight = FontWeight.SemiBold }, TextBlock.ForegroundProperty, fg)
         }, Border.BackgroundProperty, bg);
         var meta = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { badge } };
         if (item.DueDate is { } due)
@@ -448,7 +448,7 @@ internal sealed class MainWindow : Window
             var overdue = IsOverdue(item);
             meta.Children.Add(Themed(new TextBlock
             {
-                Text = $"{(overdue ? "Overdue" : "Due")} {WorkItem.FormatDate(due)}",
+                Text = $"{(overdue ? "Overdue" : "Due")} {Display.FormatDate(due)}",
                 FontSize = 12,
                 FontWeight = overdue ? FontWeight.SemiBold : FontWeight.Normal,
                 VerticalAlignment = VerticalAlignment.Center
@@ -492,7 +492,7 @@ internal sealed class MainWindow : Window
         return content;
     }
 
-    private static bool IsOverdue(WorkItem item) =>
+    private static bool IsOverdue(WorkItemResponse item) =>
         item.Status != WorkItemStatus.Done && item.DueDate is { } due && due.UtcDateTime.Date < DateTime.Today;
 
     private async Task FilterByTagAsync(string? tag)
@@ -524,7 +524,7 @@ internal sealed class MainWindow : Window
         _emptyCreate.IsVisible = !filtered;
     }
 
-    private void Edit(WorkItem? item)
+    private void Edit(WorkItemResponse? item)
     {
         _selected = item;
         _title.Text = item?.Title ?? "";
@@ -581,7 +581,7 @@ internal sealed class MainWindow : Window
     {
         var requestId = ++_requestId;
         var (_, sort, desc) = SortOptions[Math.Max(_sort.SelectedIndex, 0)];
-        var query = new ItemQuery(_statusFilter, _search.Text, _tagFilter, sort, desc, page);
+        var query = new WorkItemListQuery(_statusFilter, _search.Text, _tagFilter, sort, desc, page);
         SetBusy(true);
         try
         {
@@ -676,7 +676,7 @@ internal sealed class MainWindow : Window
     private async Task ResolveConflictAsync(bool overwrite)
     {
         if (_selected is not { } item) return;
-        WorkItem latest;
+        WorkItemResponse latest;
         try { latest = await _client.GetItemAsync(item.Id); }
         catch (Exception error)
         {

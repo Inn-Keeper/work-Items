@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using WorkItems.Api;
+using WorkItems.Contracts;
 using Xunit;
 
 namespace WorkItems.Tests;
@@ -60,8 +61,8 @@ public sealed class CrudTests
         foreach (var input in new[]
         {
             new WorkItemInput(" ", null, WorkItemStatus.Todo, null),
-            new WorkItemInput(new string('x', WorkItem.TitleMaxLength + 1), null, WorkItemStatus.Todo, null),
-            new WorkItemInput("Ok", new string('x', WorkItem.DescriptionMaxLength + 1), WorkItemStatus.Todo, null),
+            new WorkItemInput(new string('x', WorkItemLimits.TitleMaxLength + 1), null, WorkItemStatus.Todo, null),
+            new WorkItemInput("Ok", new string('x', WorkItemLimits.DescriptionMaxLength + 1), WorkItemStatus.Todo, null),
         })
         {
             var response = await client.PostAsJsonAsync("/workitems/", input);

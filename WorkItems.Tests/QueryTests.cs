@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using WorkItems.Api;
+using WorkItems.Contracts;
 using Xunit;
 
 namespace WorkItems.Tests;
