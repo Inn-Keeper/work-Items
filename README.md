@@ -63,7 +63,7 @@ curl -X PUT http://localhost:5000/workitems/1 -H 'If-Match: "0"' -H 'Content-Typ
 
 Items carry `tags` (string array; at most 10, each up to 30 characters). Tags are shared and matched case-insensitively, so `EF-Core` and `ef-core` are the same tag. `GET /tags` lists tags in use with their item counts. In both UIs, click a tag on an item to filter by it.
 
-The API applies EF Core migrations at startup. The local database was baselined to the initial migration without removing existing items. Azure deployment remains a later step in the scaffold plan.
+The API applies EF Core migrations at startup. The local database was baselined to the initial migration without removing existing items. Azure deployment is a planned next step.
 
 To add a migration after changing the model, use the repo-local EF tool:
 
