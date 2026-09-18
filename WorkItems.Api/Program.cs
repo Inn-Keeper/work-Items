@@ -7,6 +7,7 @@ builder.Services.AddDbContext<WorkItemsDb>(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddProblemDetails();
+builder.Services.AddValidation(); // Enforces the DataAnnotations and IValidatableObject rules on endpoint parameters.
 
 var app = builder.Build();
 // Every error, including unhandled exceptions and bodiless 404s, returns ProblemDetails JSON,
@@ -33,9 +34,8 @@ var items = app.MapGroup("/workitems");
 // Filtering, sorting and paging run in SQL; read-only queries skip EF change tracking.
 items.MapGet("/", async ([AsParameters] WorkItemQuery query, WorkItemsDb db) =>
 {
-    if (ValidateQuery(query) is { } error) return Results.ValidationProblem(error);
-    var status = ParseOrDefault<WorkItemStatus>(query.Status);
-    var sort = ParseOrDefault<WorkItemSort>(query.Sort) ?? WorkItemSort.DueDate;
+    var status = query.ParsedStatus;
+    var sort = query.ParsedSort;
 
     var filtered = db.WorkItems.AsNoTracking();
     if (status is not null)
@@ -72,12 +72,11 @@ items.MapGet("/{id:int}", async (int id, WorkItemsDb db, HttpResponse response) 
 
 items.MapPost("/", async (WorkItemInput input, WorkItemsDb db, HttpResponse response) =>
 {
-    if (Validate(input) is { } error) return Results.ValidationProblem(error);
     var item = new WorkItem
     {
         Title = input.Title.Trim(), Description = input.Description,
         Status = input.Status, DueDate = input.DueDate?.ToUniversalTime(),
-        Tags = await ResolveTags(db, NormalizeTags(input.Tags))
+        Tags = await ResolveTags(db, input.NormalizedTags())
     };
     db.WorkItems.Add(item);
     await db.SaveChangesAsync();
@@ -89,7 +88,6 @@ items.MapPost("/", async (WorkItemInput input, WorkItemsDb db, HttpResponse resp
 // cannot silently overwrite someone else's change (lost update).
 items.MapPut("/{id:int}", async (int id, WorkItemInput input, WorkItemsDb db, HttpRequest request, HttpResponse response) =>
 {
-    if (Validate(input) is { } error) return Results.ValidationProblem(error);
     if (IfMatchVersion(request) is not { } expected) return IfMatchError(request);
     var item = await db.WorkItems.Include(item => item.Tags).SingleOrDefaultAsync(item => item.Id == id);
     if (item is null) return Results.NotFound();
@@ -101,7 +99,7 @@ items.MapPut("/{id:int}", async (int id, WorkItemInput input, WorkItemsDb db, Ht
     item.Description = input.Description;
     item.Status = input.Status;
     item.DueDate = input.DueDate?.ToUniversalTime();
-    var tags = await ResolveTags(db, NormalizeTags(input.Tags));
+    var tags = await ResolveTags(db, input.NormalizedTags());
     item.Tags.Clear();
     item.Tags.AddRange(tags); // EF diffs the join rows; bumping Version still guards the whole edit.
     item.Version = expected + 1;
@@ -131,30 +129,6 @@ app.MapGet("/tags", async (WorkItemsDb db) =>
     .Produces<List<TagCount>>(200);
 
 app.Run();
-
-// Return field errors as ProblemDetails before writing to the database.
-static Dictionary<string, string[]>? Validate(WorkItemInput input)
-{
-    if (string.IsNullOrWhiteSpace(input.Title))
-        return new() { ["title"] = ["Title is required."] };
-    if (input.Title.Length > WorkItem.TitleMaxLength)
-        return new() { ["title"] = [$"Title must be at most {WorkItem.TitleMaxLength} characters."] };
-    if (input.Description?.Length > WorkItem.DescriptionMaxLength)
-        return new() { ["description"] = [$"Description must be at most {WorkItem.DescriptionMaxLength} characters."] };
-    if (!Enum.IsDefined(input.Status))
-        return new() { ["status"] = ["Status is invalid."] };
-    var tags = NormalizeTags(input.Tags);
-    if (tags.Count > WorkItemInput.MaxTags)
-        return new() { ["tags"] = [$"Use at most {WorkItemInput.MaxTags} tags."] };
-    if (tags.Any(tag => tag.Length > Tag.MaxLength))
-        return new() { ["tags"] = [$"Each tag must be at most {Tag.MaxLength} characters."] };
-    return null;
-}
-
-// Trimmed, blanks dropped, duplicates removed ignoring case (first spelling wins).
-static List<string> NormalizeTags(IReadOnlyList<string>? tags) =>
-    (tags ?? []).Select(tag => tag.Trim()).Where(tag => tag.Length > 0)
-        .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
 // Reuses existing tags (matched case-insensitively via the NOCASE column) and creates the rest.
 // ponytail: two requests creating the same new tag at once hit the unique index (500); retry on conflict if that matters.
@@ -186,23 +160,6 @@ static IResult IfMatchError(HttpRequest request) => request.Headers.IfMatch.Coun
 
 static IResult VersionConflict() => Results.Problem(statusCode: StatusCodes.Status412PreconditionFailed,
     title: "Item was changed elsewhere", detail: "Reload the item, or retry with its current version to overwrite.");
-
-static Dictionary<string, string[]>? ValidateQuery(WorkItemQuery query)
-{
-    if (query.Status is not null && ParseOrDefault<WorkItemStatus>(query.Status) is null)
-        return new() { ["status"] = [$"Status must be one of: {string.Join(", ", Enum.GetNames<WorkItemStatus>())}."] };
-    if (query.Sort is not null && ParseOrDefault<WorkItemSort>(query.Sort) is null)
-        return new() { ["sort"] = [$"Sort must be one of: {string.Join(", ", Enum.GetNames<WorkItemSort>())}."] };
-    if (query.Page < 1)
-        return new() { ["page"] = ["Page must be 1 or greater."] };
-    if (query.PageSize is < 1 or > WorkItemQuery.MaxPageSize)
-        return new() { ["pageSize"] = [$"Page size must be between 1 and {WorkItemQuery.MaxPageSize}."] };
-    return null;
-}
-
-// Accepts names in any case or numeric values that map to a defined member.
-static T? ParseOrDefault<T>(string? value) where T : struct, Enum =>
-    Enum.TryParse<T>(value, ignoreCase: true, out var parsed) && Enum.IsDefined(parsed) ? parsed : null;
 
 static IOrderedQueryable<WorkItem> Sort(IQueryable<WorkItem> items, WorkItemSort sort, bool desc) => sort switch
 {

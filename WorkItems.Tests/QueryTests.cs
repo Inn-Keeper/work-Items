@@ -74,5 +74,7 @@ public sealed class QueryTests : IDisposable
         Assert.Equal(["date"], page.Items.Select(item => item.Title));
         Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("/workitems/?pageSize=101")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("/workitems/?page=0")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("/workitems/?sort=nope")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await _client.GetAsync("/workitems/?status=blocked")).StatusCode);
     }
 }
